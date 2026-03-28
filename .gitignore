@@ -13,6 +13,11 @@
 # testing
 /coverage
 
+# Business data — keep local only
+/data/store.json
+/data/uploads/
+/data/exports/
+
 # next.js
 /.next/
 /out/
