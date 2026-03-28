@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-02-19T22:09:57.343Z",
+  "month": "2026-02",
+  "transactionCount": 0,
+  "deadlineCount": 0,
+  "summary": {
+    "monthRevenue": 0,
+    "monthExpense": 0,
+    "monthProfit": 0,
+    "taxReserveSuggestion": 0,
+    "overdueDeadlines": 0,
+    "dueSoonDeadlines": 0,
+    "riskFlags": []
+  }
+}

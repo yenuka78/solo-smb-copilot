@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-02-18T20:02:10.843Z",
+  "month": "2026-02",
+  "transactionCount": 4,
+  "deadlineCount": 0,
+  "summary": {
+    "monthRevenue": 4200,
+    "monthExpense": 1012.49,
+    "monthProfit": 3187.51,
+    "taxReserveSuggestion": 796.8775,
+    "overdueDeadlines": 0,
+    "dueSoonDeadlines": 0,
+    "riskFlags": []
+  }
+}

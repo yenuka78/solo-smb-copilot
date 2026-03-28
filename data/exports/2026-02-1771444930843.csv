@@ -1,0 +1,5 @@
+"id","type","amount","date","category","description","receiptName","source"
+"10f9546b-42bc-480f-8e15-eba2733fe2ec","expense","19.99","2026-02-18","software","upload test","receipt.txt","import"
+"cbb07a79-86c5-4b65-9dd8-f45283339dc9","expense","42.5","2026-02-18","tools","domain test","","manual"
+"seed-revenue-1","revenue","4200","2026-02-10","consulting","Retainer payment","","import"
+"seed-expense-1","expense","950","2026-02-12","ads","Meta ads","","import"
