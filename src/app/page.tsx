@@ -3594,11 +3594,48 @@ function MetricCard({
   progressLabel?: string;
   tone?: "default" | "good" | "warn" | "danger";
 }) {
-  const toneClasses: Record<string, string> = {
-    default: "border-slate-100",
-    good: "border-emerald-100",
-    warn: "border-amber-100",
-    danger: "border-red-100",
+  const styles: Record<string, { card: string; accent: string; valueText: string; subText: string; icon: React.ReactNode }> = {
+    default: {
+      card: "border-slate-200 bg-white",
+      accent: "bg-slate-300",
+      valueText: "text-slate-900",
+      subText: "text-slate-500",
+      icon: null,
+    },
+    good: {
+      card: "border-emerald-100 bg-emerald-50",
+      accent: "bg-emerald-500",
+      valueText: "text-emerald-700",
+      subText: "text-emerald-600",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-emerald-500">
+          <path fillRule="evenodd" d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0110 17z" clipRule="evenodd" />
+        </svg>
+      ),
+    },
+    warn: {
+      card: "border-amber-100 bg-amber-50",
+      accent: "bg-amber-400",
+      valueText: "text-amber-700",
+      subText: "text-amber-600",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-amber-500">
+          <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+        </svg>
+      ),
+    },
+    danger: {
+      card: "border-red-100 bg-red-50",
+      accent: "bg-red-500",
+      valueText: "text-red-700",
+      subText: "text-red-600",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-red-500">
+          <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 3zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.25 3.75a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5zm.75 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+        </svg>
+      ),
+    },
   };
 
   const progressColors: Record<string, string> = {
@@ -3608,24 +3645,29 @@ function MetricCard({
     danger: "bg-rose-500",
   };
 
-  const activeProgressColor = progress !== undefined && progress >= 0.9 && tone === "warn" 
-    ? progressColors.danger 
+  const s = styles[tone];
+  const activeProgressColor = progress !== undefined && progress >= 0.9 && tone === "warn"
+    ? progressColors.danger
     : progressColors[tone];
 
   return (
-    <article className={`rounded-2xl border bg-white p-4 shadow-sm ${toneClasses[tone]}`}>
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <div className="mt-1 flex items-baseline gap-2">
-        <p className="text-xl font-semibold">{value}</p>
-        {subValue && <p className="text-xs font-medium text-slate-500">{subValue}</p>}
+    <article className={`relative overflow-hidden rounded-2xl border p-4 shadow-sm ${s.card}`}>
+      <div className={`absolute left-0 top-0 h-full w-1 ${s.accent}`} />
+      <div className="flex items-start justify-between">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+        {s.icon}
       </div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <p className={`text-xl font-bold ${s.valueText}`}>{value}</p>
+      </div>
+      {subValue && <p className={`mt-0.5 text-xs font-medium ${s.subText}`}>{subValue}</p>}
       {progress !== undefined && (
         <div className="mt-3">
           <div className="flex items-center justify-between text-[10px] font-medium text-slate-500 mb-1">
             <span>{progressLabel}</span>
             <span>{Math.round(progress * 100)}%</span>
           </div>
-          <div className="h-1.5 w-full rounded-full bg-slate-100">
+          <div className="h-1.5 w-full rounded-full bg-white/60">
             <div
               className={`h-1.5 rounded-full transition-all duration-500 ${activeProgressColor}`}
               style={{ width: `${Math.round(progress * 100)}%` }}
