@@ -1,15 +1,16 @@
 "use client";
 import { useState } from "react";
 
-export default function CollapsibleSection({ title, children, defaultOpen = false, badge }: {
+export default function CollapsibleSection({ title, children, defaultOpen = false, badge, className }: {
   title: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
   badge?: string | number;
+  className?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+    <div className={`rounded-xl border border-slate-200 bg-white overflow-hidden ${className ?? ""}`}>
       <button
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"

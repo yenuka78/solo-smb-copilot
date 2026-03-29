@@ -1978,10 +1978,10 @@ export default function Home() {
         {statusMessage && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{statusMessage}</div>}
 
         {/* ── HOME TAB ─────────────────────────────────── */}
-        <div className={`flex flex-col gap-6 ${activeTab !== "home" ? "hidden" : ""}`}>
+        <div className={`flex flex-col gap-6 md:grid md:grid-cols-2 md:items-start ${activeTab !== "home" ? "hidden" : ""}`}>
 
         {!onboardingDismissed && (
-          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 md:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">First-run checklist</h2>
@@ -2045,7 +2045,7 @@ export default function Home() {
         )}
 
         {onboardingDismissed && (
-          <div className="flex justify-end">
+          <div className="flex justify-end md:col-span-2">
             <button
               onClick={async () => {
                 setError(null);
@@ -2074,7 +2074,7 @@ export default function Home() {
           </div>
         )}
 
-        <section id="dashboard-metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section id="dashboard-metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 md:col-span-2">
           <MetricCard
             label="Revenue (this month)"
             value={money(data.summary.monthRevenue, currency)}
@@ -2101,7 +2101,7 @@ export default function Home() {
             tone={cashRunwayData.summary.riskLevel === "high" ? "danger" : cashRunwayData.summary.riskLevel === "medium" ? "warn" : "good"}
           />
         </section>
-        <CollapsibleSection title="More metrics" defaultOpen={false}>
+        <CollapsibleSection title="More metrics" defaultOpen={false} className="md:col-span-2">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 pt-2">
             <MetricCard
               label="This Month Expense"
@@ -2313,7 +2313,7 @@ export default function Home() {
         </section>
 
         {data.summary.revenueCategories.length > 0 && (
-          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 md:col-span-2">
             <h2 className="text-lg font-semibold">This month revenue breakdown</h2>
             <p className="mt-1 text-xs text-slate-500">See which streams are driving your growth.</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -2339,7 +2339,7 @@ export default function Home() {
         )}
 
         {data.summary.expenseCategories.length > 0 && (
-          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 md:col-span-2">
             <h2 className="text-lg font-semibold">This month expense breakdown</h2>
             <p className="mt-1 text-xs text-slate-500">See which categories are consuming your budget.</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
