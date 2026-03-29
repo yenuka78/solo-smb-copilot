@@ -48,18 +48,20 @@ describe("POST /api/receivables/recommendation-calibration", () => {
       status: "pending",
     });
 
+    const d1 = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    const d2 = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
     await recordReceivableActionEvents([
       {
         receivableId: r1.id,
         actionType: "log_reminder",
         channel: "email",
-        createdAt: "2026-02-20T09:00:00Z",
+        createdAt: d1,
       },
       {
         receivableId: r2.id,
         actionType: "log_reminder",
         channel: "email",
-        createdAt: "2026-02-21T09:00:00Z",
+        createdAt: d2,
       },
     ]);
 
