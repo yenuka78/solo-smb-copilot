@@ -742,6 +742,7 @@ export default function Home() {
     description: "",
     receiptName: "",
   });
+  const [txErrors, setTxErrors] = useState<{ amount?: string; date?: string }>({});
 
   const [deadlineForm, setDeadlineForm] = useState({
     title: "",
@@ -996,6 +997,13 @@ export default function Home() {
     e.preventDefault();
     setError(null);
     setStatusMessage("");
+    const errs: { amount?: string; date?: string } = {};
+    const amountNum = Number(txForm.amount);
+    if (!txForm.amount || isNaN(amountNum) || amountNum <= 0) errs.amount = "Enter a positive amount";
+    if (!txForm.date) errs.date = "Date is required";
+    else if (isNaN(Date.parse(txForm.date))) errs.date = "Enter a valid date";
+    if (Object.keys(errs).length > 0) { setTxErrors(errs); return; }
+    setTxErrors({});
     setSavingTransaction(true);
 
     try {
@@ -1027,6 +1035,7 @@ export default function Home() {
         description: "",
         receiptName: "",
       });
+      setTxErrors({});
       setEditingId(null);
       setStatusMessage(editingId ? "Transaction updated." : "Transaction added. Your dashboard totals are now updated.");
       await refresh();
@@ -2758,15 +2767,15 @@ export default function Home() {
               <label className="text-xs font-medium text-slate-600" htmlFor="tx-amount">Amount</label>
               <input
                 id="tx-amount"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className={`w-full rounded-lg border px-3 py-2 ${txErrors.amount ? "border-red-400 focus:ring-red-400" : "border-slate-300"}`}
                 placeholder="0.00"
                 type="number"
                 step="0.01"
                 min="0"
-                required
                 value={txForm.amount}
-                onChange={(e) => setTxForm((prev) => ({ ...prev, amount: e.target.value }))}
+                onChange={(e) => { setTxForm((prev) => ({ ...prev, amount: e.target.value })); setTxErrors(prev => ({ ...prev, amount: undefined })); }}
               />
+              {txErrors.amount && <p className="text-xs text-red-500">{txErrors.amount}</p>}
 
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-slate-600" htmlFor="tx-date">Date</label>
@@ -2793,12 +2802,12 @@ export default function Home() {
               </div>
               <input
                 id="tx-date"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className={`w-full rounded-lg border px-3 py-2 ${txErrors.date ? "border-red-400 focus:ring-red-400" : "border-slate-300"}`}
                 type="date"
-                required
                 value={txForm.date}
-                onChange={(e) => setTxForm((prev) => ({ ...prev, date: e.target.value }))}
+                onChange={(e) => { setTxForm((prev) => ({ ...prev, date: e.target.value })); setTxErrors(prev => ({ ...prev, date: undefined })); }}
               />
+              {txErrors.date && <p className="text-xs text-red-500">{txErrors.date}</p>}
 
               <label className="text-xs font-medium text-slate-600" htmlFor="tx-category">Category</label>
               <input
