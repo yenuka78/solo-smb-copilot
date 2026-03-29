@@ -1,9 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import AICopilot from "@/components/AICopilot";
 import AICopilotInline from "@/components/AICopilotInline";
 import BottomNav, { type TabId } from "@/components/BottomNav";
+import CollapsibleSection from "@/components/CollapsibleSection";
 import { formatIsoDateForDisplay, getRelativeDateLabel } from "@/lib/dateDisplay";
 import { formatDeadlineDate, getDeadlineStatusLabel, sortDeadlinesForDisplay } from "@/lib/deadlineStatus";
 import { matchesTransactionSearch } from "@/lib/transactionSearch";
@@ -804,6 +804,8 @@ export default function Home() {
   const [runningRecommendationCalibration, setRunningRecommendationCalibration] = useState(false);
   const [transactionFilter, setTransactionFilter] = useState<"all" | "revenue" | "expense" | "review">("all");
   const [transactionSearch, setTransactionSearch] = useState("");
+  const [addType, setAddType] = useState<"transaction" | "receipt" | "deadline">("transaction");
+  const [arShowAll, setArShowAll] = useState(false);
 
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
@@ -1917,32 +1919,57 @@ export default function Home() {
     quarterly: "quarterly",
   };
 
-  const visibleReceivableIds = receivablesData.items.slice(0, 20).map((item) => item.id);
+  const visibleReceivableIds = receivablesData.items.slice(0, arShowAll ? receivablesData.items.length : 5).map((item) => item.id);
   const allVisibleReceivablesSelected =
     visibleReceivableIds.length > 0 && visibleReceivableIds.every((id) => selectedReceivableIds.includes(id));
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 pb-24 pt-6 md:px-8 md:pb-10 md:pt-8">
-        <header className="flex items-center justify-between rounded-2xl bg-indigo-600 px-5 py-4 shadow-sm text-white">
-          <div>
-            <h1 className="text-lg font-bold leading-tight">SMB Copilot</h1>
-            <p className="text-xs text-indigo-200 mt-0.5">
-              {activeTab === "home" && "Dashboard"}
-              {activeTab === "add" && "Log transaction"}
-              {activeTab === "copilot" && "AI Finance Copilot"}
-              {activeTab === "ar" && "AR Follow-up Queue"}
-              {activeTab === "more" && "Transactions & Settings"}
-            </p>
+        <header className="rounded-2xl bg-indigo-600 px-5 py-4 shadow-sm text-white">
+          {/* Mobile: compact title + current tab */}
+          <div className="flex items-center justify-between md:hidden">
+            <div>
+              <h1 className="text-lg font-bold leading-tight">SMB Copilot</h1>
+              <p className="text-xs text-indigo-200 mt-0.5">
+                {activeTab === "home" && "Dashboard"}
+                {activeTab === "add" && "Log transaction"}
+                {activeTab === "copilot" && "AI Finance Copilot"}
+                {activeTab === "ar" && "AR Follow-up Queue"}
+                {activeTab === "more" && "Transactions & Settings"}
+              </p>
+            </div>
+            {loading && <span className="text-xs text-indigo-200 animate-pulse">Refreshing…</span>}
           </div>
-          {loading && <span className="text-xs text-indigo-200 animate-pulse">Refreshing…</span>}
+          {/* Desktop: full title + tab nav */}
+          <div className="hidden md:flex md:items-center md:justify-between">
+            <div>
+              <h1 className="text-xl font-bold">Solo SMB Daily Finance Copilot</h1>
+              <p className="text-xs text-indigo-200 mt-0.5">Log transactions · track tax reserve · stay ahead of deadlines</p>
+            </div>
+            <div className="flex items-center gap-1">
+              {(["home","add","copilot","ar","more"] as const).map((tab) => {
+                const labels: Record<string, string> = { home: "Dashboard", add: "Add", copilot: "Copilot", ar: "AR", more: "More" };
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${activeTab === tab ? "bg-white text-indigo-700" : "text-indigo-100 hover:bg-indigo-500"}`}
+                  >
+                    {labels[tab]}
+                  </button>
+                );
+              })}
+              {loading && <span className="ml-3 text-xs text-indigo-200 animate-pulse">Refreshing…</span>}
+            </div>
+          </div>
         </header>
 
         {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         {statusMessage && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{statusMessage}</div>}
 
         {/* ── HOME TAB ─────────────────────────────────── */}
-        {activeTab === "home" && <>
+        <div className={`flex flex-col gap-6 ${activeTab !== "home" ? "hidden md:flex" : ""}`}>
 
         {!onboardingDismissed && (
           <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
@@ -2038,35 +2065,24 @@ export default function Home() {
           </div>
         )}
 
-        <section id="dashboard-metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <section id="dashboard-metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
-            label="This Month Revenue"
+            label="Revenue (this month)"
             value={money(data.summary.monthRevenue, currency)}
             subValue={revenueTrend}
             progress={data.summary.monthlyRevenueProgress}
             tone="good"
           />
           <MetricCard
-            label="This Month Expense"
-            value={money(data.summary.monthExpense, currency)}
-            subValue={expenseTrend}
-            progress={data.summary.monthlyExpenseProgress}
-            progressLabel="Limit usage"
-            tone="warn"
+            label="Outstanding AR"
+            value={money(receivablesData.totals.openAmount, currency)}
+            subValue={`${receivablesData.totals.openCount} open invoice${receivablesData.totals.openCount === 1 ? "" : "s"}`}
+            tone={receivablesData.totals.overdueCount > 0 ? "warn" : "default"}
           />
           <MetricCard
-            label="This Month Profit"
-            value={money(data.summary.monthProfit, currency)}
-            subValue={data.summary.monthRevenue > 0 ? `${(data.summary.monthProfitMargin * 100).toFixed(1)}% margin` : undefined}
-            tone={data.summary.monthProfit > 0 ? "good" : data.summary.monthProfit < 0 ? "danger" : "default"}
-          />
-          <MetricCard label="Tax Reserve Suggestion" value={money(data.summary.taxReserveSuggestion, currency)} tone="default" />
-          <MetricCard label="Overdue Deadlines" value={String(data.summary.overdueDeadlines)} tone={data.summary.overdueDeadlines > 0 ? "danger" : "default"} />
-          <MetricCard label="Due in 7 Days" value={String(data.summary.dueSoonDeadlines)} tone="default" />
-          <MetricCard
-            label="Overdue Receivables"
+            label="Overdue"
             value={`${receivablesData.totals.overdueCount} • ${money(receivablesData.totals.overdueAmount, currency)}`}
-            subValue={receivablesData.totals.overdueCount > 0 ? "Follow up today" : "No overdue invoices"}
+            subValue={receivablesData.totals.overdueCount > 0 ? "Follow up today" : "None overdue"}
             tone={receivablesData.totals.overdueCount > 0 ? "danger" : "good"}
           />
           <MetricCard
@@ -2075,29 +2091,47 @@ export default function Home() {
             subValue={cashRunwayData.summary.daysUntilCashOut !== null ? `Cash-out in ${cashRunwayData.summary.daysUntilCashOut}d` : undefined}
             tone={cashRunwayData.summary.riskLevel === "high" ? "danger" : cashRunwayData.summary.riskLevel === "medium" ? "warn" : "good"}
           />
-          <MetricCard
-            label="14-Day Lowest Cash"
-            value={money(cashRunwayData.summary.lowestProjectedBalance, currency)}
-            subValue={cashRunwayData.summary.lowestProjectedBalanceDay ? `Day ${cashRunwayData.summary.lowestProjectedBalanceDay}` : "No projected dip"}
-            tone={cashRunwayData.summary.lowestProjectedBalance < 0 ? "danger" : "default"}
-          />
-          <MetricCard
-            label="Top 5 Actions Impact (14d)"
-            value={money(ownerActionsData.brief.totalExpectedImpact14d, currency)}
-            subValue={`${ownerActionsData.brief.topActions.length} ranked action${ownerActionsData.brief.topActions.length === 1 ? "" : "s"}`}
-            tone={ownerActionsData.brief.totalExpectedImpact14d > 0 ? "good" : "default"}
-          />
         </section>
+        <CollapsibleSection title="More metrics" defaultOpen={false}>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 pt-2">
+            <MetricCard
+              label="This Month Expense"
+              value={money(data.summary.monthExpense, currency)}
+              subValue={expenseTrend}
+              progress={data.summary.monthlyExpenseProgress}
+              progressLabel="Limit usage"
+              tone="warn"
+            />
+            <MetricCard
+              label="This Month Profit"
+              value={money(data.summary.monthProfit, currency)}
+              subValue={data.summary.monthRevenue > 0 ? `${(data.summary.monthProfitMargin * 100).toFixed(1)}% margin` : undefined}
+              tone={data.summary.monthProfit > 0 ? "good" : data.summary.monthProfit < 0 ? "danger" : "default"}
+            />
+            <MetricCard label="Tax Reserve Suggestion" value={money(data.summary.taxReserveSuggestion, currency)} tone="default" />
+            <MetricCard label="Overdue Deadlines" value={String(data.summary.overdueDeadlines)} tone={data.summary.overdueDeadlines > 0 ? "danger" : "default"} />
+            <MetricCard label="Due in 7 Days" value={String(data.summary.dueSoonDeadlines)} tone="default" />
+            <MetricCard
+              label="14-Day Lowest Cash"
+              value={money(cashRunwayData.summary.lowestProjectedBalance, currency)}
+              subValue={cashRunwayData.summary.lowestProjectedBalanceDay ? `Day ${cashRunwayData.summary.lowestProjectedBalanceDay}` : "No projected dip"}
+              tone={cashRunwayData.summary.lowestProjectedBalance < 0 ? "danger" : "default"}
+            />
+            <MetricCard
+              label="Top 5 Actions Impact (14d)"
+              value={money(ownerActionsData.brief.totalExpectedImpact14d, currency)}
+              subValue={`${ownerActionsData.brief.topActions.length} ranked action${ownerActionsData.brief.topActions.length === 1 ? "" : "s"}`}
+              tone={ownerActionsData.brief.totalExpectedImpact14d > 0 ? "good" : "default"}
+            />
+          </div>
+        </CollapsibleSection>
 
         <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">Cash runway + 14-day risk projection</h2>
               <p className="mt-1 text-xs text-slate-500">
-                Uses last 30 days of net cash trend plus expected receivable collections to estimate near-term liquidity risk.
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Assumptions: burn x{cashRunwayData.summary.assumptions.burnRateMultiplier.toFixed(2)} • collection confidence {(cashRunwayData.summary.assumptions.collectionConfidence * 100).toFixed(0)}%
+                Uses last 30 days of net cash trend plus expected receivable collections.
               </p>
             </div>
             <div className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -2123,7 +2157,7 @@ export default function Home() {
               </p>
             </div>
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Expected 14d receivable inflow</p>
+              <p className="text-xs text-slate-500">14d receivable inflow</p>
               <p className="mt-1 font-semibold">{money(cashRunwayData.summary.expectedReceivableInflow14d, currency)}</p>
             </div>
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
@@ -2134,75 +2168,78 @@ export default function Home() {
             </div>
           </div>
 
-          {cashRunwayData.summary.projection14d.length > 0 && (
-            hasCashRunwayData ? (
-              <div className="mt-4 overflow-auto">
-                <table className="min-w-full text-xs">
-                  <thead className="text-left text-slate-500">
-                    <tr>
-                      <th className="py-2">Day</th>
-                      <th className="py-2">Date</th>
-                      <th className="py-2">Baseline net</th>
-                      <th className="py-2">Expected inflow</th>
-                      <th className="py-2">Worst</th>
-                      <th className="py-2">Base</th>
-                      <th className="py-2">Best</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cashRunwayData.summary.projection14d.map((point, index) => {
-                      const band = cashRunwayData.summary.projectionBands14d[index];
+          <CollapsibleSection title="14-day projection table & risk details" defaultOpen={false}>
+            {cashRunwayData.summary.projection14d.length > 0 && (
+              hasCashRunwayData ? (
+                <div className="mt-2 overflow-auto">
+                  <table className="min-w-full text-xs">
+                    <thead className="text-left text-slate-500">
+                      <tr>
+                        <th className="py-2">Day</th>
+                        <th className="py-2">Date</th>
+                        <th className="py-2">Baseline net</th>
+                        <th className="py-2">Expected inflow</th>
+                        <th className="py-2">Worst</th>
+                        <th className="py-2">Base</th>
+                        <th className="py-2">Best</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cashRunwayData.summary.projection14d.map((point, index) => {
+                        const band = cashRunwayData.summary.projectionBands14d[index];
 
-                      return (
-                        <tr key={point.day} className="border-t border-slate-100">
-                          <td className="py-2">{point.day}</td>
-                          <td className="py-2">{formatIsoDateForDisplay(point.date)}</td>
-                          <td className={`py-2 ${point.baselineNetChange < 0 ? "text-rose-700" : "text-emerald-700"}`}>
-                            {money(point.baselineNetChange, currency)}
-                          </td>
-                          <td className="py-2 text-indigo-700">{money(point.expectedReceivableInflow, currency)}</td>
-                          <td className={`py-2 ${band && band.worstCaseBalance < 0 ? "text-rose-700" : "text-slate-700"}`}>
-                            {money(band?.worstCaseBalance ?? point.projectedBalance, currency)}
-                          </td>
-                          <td className={`py-2 font-medium ${point.projectedBalance < 0 ? "text-rose-700" : "text-slate-900"}`}>
-                            {money(band?.baseCaseBalance ?? point.projectedBalance, currency)}
-                          </td>
-                          <td className={`py-2 ${band && band.bestCaseBalance < 0 ? "text-rose-700" : "text-emerald-700"}`}>
-                            {money(band?.bestCaseBalance ?? point.projectedBalance, currency)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                Add current cash, transactions, or receivables to generate a meaningful 14-day runway projection.
-              </div>
-            )
-          )}
+                        return (
+                          <tr key={point.day} className="border-t border-slate-100">
+                            <td className="py-2">{point.day}</td>
+                            <td className="py-2">{formatIsoDateForDisplay(point.date)}</td>
+                            <td className={`py-2 ${point.baselineNetChange < 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                              {money(point.baselineNetChange, currency)}
+                            </td>
+                            <td className="py-2 text-indigo-700">{money(point.expectedReceivableInflow, currency)}</td>
+                            <td className={`py-2 ${band && band.worstCaseBalance < 0 ? "text-rose-700" : "text-slate-700"}`}>
+                              {money(band?.worstCaseBalance ?? point.projectedBalance, currency)}
+                            </td>
+                            <td className={`py-2 font-medium ${point.projectedBalance < 0 ? "text-rose-700" : "text-slate-900"}`}>
+                              {money(band?.baseCaseBalance ?? point.projectedBalance, currency)}
+                            </td>
+                            <td className={`py-2 ${band && band.bestCaseBalance < 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                              {money(band?.bestCaseBalance ?? point.projectedBalance, currency)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="mt-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  Add current cash, transactions, or receivables to generate a meaningful 14-day runway projection.
+                </div>
+              )
+            )}
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Risk drivers</p>
-              <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-700">
-                {cashRunwayData.summary.riskReasons.length === 0 ? (
-                  <li>No active cash runway risk drivers detected.</li>
-                ) : (
-                  cashRunwayData.summary.riskReasons.map((reason) => <li key={reason}>{reason}</li>)
-                )}
-              </ul>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Risk drivers</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Assumptions: burn x{cashRunwayData.summary.assumptions.burnRateMultiplier.toFixed(2)} · collection confidence {(cashRunwayData.summary.assumptions.collectionConfidence * 100).toFixed(0)}%</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-700">
+                  {cashRunwayData.summary.riskReasons.length === 0 ? (
+                    <li>No active cash runway risk drivers detected.</li>
+                  ) : (
+                    cashRunwayData.summary.riskReasons.map((reason) => <li key={reason}>{reason}</li>)
+                  )}
+                </ul>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Suggested owner actions</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-700">
+                  {cashRunwayData.summary.suggestedActions.map((action) => (
+                    <li key={action}>{action}</li>
+                  ))}
+                </ul>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Suggested owner actions</p>
-              <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-slate-700">
-                {cashRunwayData.summary.suggestedActions.map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
+          </CollapsibleSection>
         </section>
 
         <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
@@ -2210,7 +2247,7 @@ export default function Home() {
             <div>
               <h2 className="text-lg font-semibold">Weekly Top 5 owner actions</h2>
               <p className="mt-1 text-xs text-slate-500">
-                Ranked by expected 14-day cash impact so you know exactly where to focus this week.
+                Ranked by expected 14-day cash impact.
               </p>
             </div>
             <div className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -2224,25 +2261,45 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
-            {ownerActionsData.brief.topActions.map((action, index) => (
-              <article key={action.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">#{index + 1} • {action.category.replaceAll("_", " ")}</p>
-                <h3 className="mt-1 text-sm font-semibold text-slate-900">{action.title}</h3>
-                <p className="mt-2 text-xs text-slate-600">{action.description}</p>
-                <p className="mt-3 text-xs text-slate-500">{action.rationale}</p>
-                <div className="mt-3 flex items-center justify-between text-xs">
-                  <span className="rounded-full bg-emerald-100 px-2 py-1 font-medium text-emerald-700">
-                    {money(action.expectedCashImpact14d, currency)}
-                  </span>
-                  <span className="text-slate-500">{action.confidence} confidence</span>
-                </div>
-              </article>
-            ))}
-          </div>
-
-          {ownerActionsData.brief.topActions.length === 0 && (
+          {ownerActionsData.brief.topActions.length === 0 ? (
             <p className="mt-3 text-sm text-slate-600">No owner actions available yet. Add transactions and receivables to generate weekly priorities.</p>
+          ) : (
+            <>
+              {ownerActionsData.brief.topActions.slice(0, 1).map((action, index) => (
+                <article key={action.id} className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">#{index + 1} • {action.category.replaceAll("_", " ")}</p>
+                  <h3 className="mt-1 text-sm font-semibold text-slate-900">{action.title}</h3>
+                  <p className="mt-2 text-xs text-slate-600">{action.description}</p>
+                  <p className="mt-3 text-xs text-slate-500">{action.rationale}</p>
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <span className="rounded-full bg-emerald-100 px-2 py-1 font-medium text-emerald-700">
+                      {money(action.expectedCashImpact14d, currency)}
+                    </span>
+                    <span className="text-slate-500">{action.confidence} confidence</span>
+                  </div>
+                </article>
+              ))}
+              {ownerActionsData.brief.topActions.length > 1 && (
+                <CollapsibleSection title={`${ownerActionsData.brief.topActions.length - 1} more actions`} defaultOpen={false} badge={ownerActionsData.brief.topActions.length - 1}>
+                  <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] pt-2">
+                    {ownerActionsData.brief.topActions.slice(1).map((action, index) => (
+                      <article key={action.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">#{index + 2} • {action.category.replaceAll("_", " ")}</p>
+                        <h3 className="mt-1 text-sm font-semibold text-slate-900">{action.title}</h3>
+                        <p className="mt-2 text-xs text-slate-600">{action.description}</p>
+                        <p className="mt-3 text-xs text-slate-500">{action.rationale}</p>
+                        <div className="mt-3 flex items-center justify-between text-xs">
+                          <span className="rounded-full bg-emerald-100 px-2 py-1 font-medium text-emerald-700">
+                            {money(action.expectedCashImpact14d, currency)}
+                          </span>
+                          <span className="text-slate-500">{action.confidence} confidence</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </CollapsibleSection>
+              )}
+            </>
           )}
         </section>
 
@@ -2298,15 +2355,15 @@ export default function Home() {
           </section>
         )}
 
-        </> /* end home tab */}
+        </div>
 
         {/* ── COPILOT TAB ──────────────────────────────── */}
-        {activeTab === "copilot" && (
+        <div className={activeTab !== "copilot" ? "hidden md:hidden" : ""}>
           <AICopilotInline />
-        )}
+        </div>
 
         {/* ── MORE TAB — settings/billing/export ───────── */}
-        {activeTab === "more" && <>
+        <div className={`flex flex-col gap-6 ${activeTab !== "more" ? "hidden md:flex" : ""}`}>
         <section className="grid gap-6">
           <div id="settings-section" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 lg:col-span-2">
             <h2 className="text-lg font-semibold">Settings & assistant tools</h2>
@@ -2466,126 +2523,107 @@ export default function Home() {
               )}
             </div>
 
-            <div className="mt-4 space-y-2">
-              <label className="block text-sm font-medium" htmlFor="tax-rate">Tax reserve rate (%)</label>
-              <input
-                id="tax-rate"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                type="number"
-                min={0}
-                max={100}
-                value={taxRatePercent}
-                onChange={(e) => setTaxRatePercent(Number(e.target.value))}
-              />
-              <p className="text-xs text-slate-500">Tip: many solo businesses keep 20–35% reserved based on local tax rules.</p>
-              <button
-                onClick={saveTaxRate}
-                disabled={savingTaxRate}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              >
-                {savingTaxRate ? "Saving…" : "Save rate"}
-              </button>
-            </div>
+            <CollapsibleSection title="Business info" defaultOpen={true}>
+              <div className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium" htmlFor="tax-rate">Tax reserve rate (%)</label>
+                  <input
+                    id="tax-rate"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={taxRatePercent}
+                    onChange={(e) => setTaxRatePercent(Number(e.target.value))}
+                  />
+                  <p className="text-xs text-slate-500">Tip: many solo businesses keep 20–35% reserved based on local tax rules.</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium" htmlFor="revenue-goal">Monthly revenue goal ({currency})</label>
+                  <input
+                    id="revenue-goal"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 5000"
+                    value={revenueGoal}
+                    onChange={(e) => setRevenueGoal(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium" htmlFor="expense-limit">Monthly expense limit ({currency})</label>
+                  <input
+                    id="expense-limit"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 2000"
+                    value={expenseLimit}
+                    onChange={(e) => setExpenseLimit(e.target.value)}
+                  />
+                </div>
+                <button
+                  onClick={saveTaxRate}
+                  disabled={savingTaxRate}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                >
+                  {savingTaxRate ? "Saving…" : "Save business info"}
+                </button>
+              </div>
+            </CollapsibleSection>
 
-            <div className="mt-6 space-y-2">
-              <label className="block text-sm font-medium" htmlFor="revenue-goal">Monthly revenue goal ({currency})</label>
-              <input
-                id="revenue-goal"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                type="number"
-                min={0}
-                placeholder="e.g. 5000"
-                value={revenueGoal}
-                onChange={(e) => setRevenueGoal(e.target.value)}
-              />
-              <p className="text-xs text-slate-500">A goal helps track your progress on the dashboard.</p>
-              <button
-                onClick={saveTaxRate}
-                disabled={savingTaxRate}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              >
-                {savingTaxRate ? "Saving…" : "Save goal"}
-              </button>
-            </div>
-
-            <div className="mt-6 space-y-2">
-              <label className="block text-sm font-medium" htmlFor="expense-limit">Monthly expense limit ({currency})</label>
-              <input
-                id="expense-limit"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                type="number"
-                min={0}
-                placeholder="e.g. 2000"
-                value={expenseLimit}
-                onChange={(e) => setExpenseLimit(e.target.value)}
-              />
-              <p className="text-xs text-slate-500">A limit helps you monitor and control monthly overhead.</p>
-              <button
-                onClick={saveTaxRate}
-                disabled={savingTaxRate}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              >
-                {savingTaxRate ? "Saving…" : "Save limit"}
-              </button>
-            </div>
-
-            <div className="mt-6 space-y-2">
-              <label className="block text-sm font-medium" htmlFor="current-cash-balance">Current cash balance ({currency})</label>
-              <input
-                id="current-cash-balance"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                type="number"
-                min={0}
-                placeholder="e.g. 3000"
-                value={currentCashBalance}
-                onChange={(e) => setCurrentCashBalance(e.target.value)}
-              />
-              <p className="text-xs text-slate-500">Used to calculate runway and 14-day cash risk projection.</p>
-              <button
-                onClick={saveTaxRate}
-                disabled={savingTaxRate}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              >
-                {savingTaxRate ? "Saving…" : "Save cash balance"}
-              </button>
-            </div>
-
-            <div className="mt-6 space-y-2">
-              <label className="block text-sm font-medium" htmlFor="cash-burn-rate-multiplier">Burn sensitivity multiplier</label>
-              <input
-                id="cash-burn-rate-multiplier"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                type="number"
-                min={0.5}
-                max={2}
-                step="0.05"
-                value={cashBurnRateMultiplier}
-                onChange={(e) => setCashBurnRateMultiplier(e.target.value)}
-              />
-              <p className="text-xs text-slate-500">1.00 = baseline burn. Above 1.00 models higher spend, below 1.00 models tighter cost control.</p>
-            </div>
-
-            <div className="mt-6 space-y-2">
-              <label className="block text-sm font-medium" htmlFor="receivable-collection-confidence">Collection confidence</label>
-              <input
-                id="receivable-collection-confidence"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                type="number"
-                min={0}
-                max={1.5}
-                step="0.05"
-                value={receivableCollectionConfidence}
-                onChange={(e) => setReceivableCollectionConfidence(e.target.value)}
-              />
-              <p className="text-xs text-slate-500">1.00 = baseline collections. Lower values assume delayed collections; higher values assume stronger collection execution.</p>
-              <button
-                onClick={saveTaxRate}
-                disabled={savingTaxRate}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              >
-                {savingTaxRate ? "Saving…" : "Save forecast assumptions"}
-              </button>
-            </div>
+            <CollapsibleSection title="Financial settings" defaultOpen={false}>
+              <div className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium" htmlFor="current-cash-balance">Current cash balance ({currency})</label>
+                  <input
+                    id="current-cash-balance"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 3000"
+                    value={currentCashBalance}
+                    onChange={(e) => setCurrentCashBalance(e.target.value)}
+                  />
+                  <p className="text-xs text-slate-500">Used to calculate runway and 14-day cash risk projection.</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium" htmlFor="cash-burn-rate-multiplier">Burn sensitivity multiplier</label>
+                  <input
+                    id="cash-burn-rate-multiplier"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    type="number"
+                    min={0.5}
+                    max={2}
+                    step="0.05"
+                    value={cashBurnRateMultiplier}
+                    onChange={(e) => setCashBurnRateMultiplier(e.target.value)}
+                  />
+                  <p className="text-xs text-slate-500">1.00 = baseline burn. Above 1.00 models higher spend, below 1.00 models tighter cost control.</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium" htmlFor="receivable-collection-confidence">Collection confidence</label>
+                  <input
+                    id="receivable-collection-confidence"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    type="number"
+                    min={0}
+                    max={1.5}
+                    step="0.05"
+                    value={receivableCollectionConfidence}
+                    onChange={(e) => setReceivableCollectionConfidence(e.target.value)}
+                  />
+                  <p className="text-xs text-slate-500">1.00 = baseline collections. Lower values assume delayed collections; higher assumes stronger execution.</p>
+                </div>
+                <button
+                  onClick={saveTaxRate}
+                  disabled={savingTaxRate}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                >
+                  {savingTaxRate ? "Saving…" : "Save financial settings"}
+                </button>
+              </div>
+            </CollapsibleSection>
 
             <h3 className="mt-6 text-sm font-semibold">Risk flags</h3>
             {data.summary.riskFlags.length === 0 ? (
@@ -2688,11 +2726,19 @@ export default function Home() {
           </div>
 
         </section>
-        </> /* end more tab */}
+        </div>
 
         {/* ── ADD TAB — log transaction / deadline / upload ── */}
-        {(activeTab === "add" || editingId) && <>
-          <form id="transaction-form-section" onSubmit={submitTransaction} className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 ${editingId ? "ring-2 ring-emerald-500" : ""}`}>
+        <div className={`flex flex-col gap-6 ${(activeTab !== "add" && !editingId) ? "hidden md:flex" : ""}`}>
+          <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1 gap-1">
+            {(["transaction", "receipt", "deadline"] as const).map(t => (
+              <button key={t} onClick={() => setAddType(t)}
+                className={`flex-1 rounded-lg py-2 text-xs font-medium capitalize transition-colors ${addType === t ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <form id="transaction-form-section" onSubmit={submitTransaction} className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 ${addType !== "transaction" && !editingId ? "hidden" : ""} ${editingId ? "ring-2 ring-emerald-500" : ""}`}>
             <h2 className="text-lg font-semibold">{editingId ? "Edit transaction" : "Log revenue / expense"}</h2>
             <p className="mt-1 text-xs text-slate-500">
               {editingId ? "Update details for this record." : "Capture entries as you go. Short notes now save cleanup time later."}
@@ -2817,7 +2863,7 @@ export default function Home() {
             </div>
           </form>
 
-          <form id="deadline-form-section" onSubmit={submitDeadline} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 lg:col-span-1">
+          <form id="deadline-form-section" onSubmit={submitDeadline} className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 lg:col-span-1 ${addType !== "deadline" ? "hidden" : ""}`}>
             <h2 className="text-lg font-semibold">Tax / compliance deadline</h2>
             <p className="mt-1 text-xs text-slate-500">Set it once and track it here so filings never sneak up on you.</p>
             <div className="mt-4 space-y-3">
@@ -2863,7 +2909,7 @@ export default function Home() {
               </button>
             </div>
           </form>
-          <section id="upload-section" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+          <section id="upload-section" className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 ${addType !== "receipt" ? "hidden" : ""}`}>
           <h2 className="text-lg font-semibold">Scan receipt / invoice (upload)</h2>
           <p className="mt-1 text-xs text-slate-500">
             Upload a file and optionally prefill details. If OCR confidence is low, it will be flagged for manual review.
@@ -2924,10 +2970,10 @@ export default function Home() {
           </form>
           {lastUploadMessage && <p className="mt-2 text-xs text-slate-600">{lastUploadMessage}</p>}
           </section>
-        </> /* end add tab */}
+        </div>
 
         {/* ── AR TAB ───────────────────────────────────── */}
-        {activeTab === "ar" && <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+        <section className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 ${activeTab !== "ar" ? "hidden md:block" : ""}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">AR follow-up queue</h2>
@@ -2994,199 +3040,6 @@ export default function Home() {
             )}
           </div>
 
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="font-semibold text-slate-700">Queue action analytics</p>
-                <p className="mt-1">
-                  Lifetime logged actions: <span className="font-semibold">{receivablesData.analytics.lifetime.totalLoggedActions}</span>
-                </p>
-              </div>
-              <div className="flex gap-1 rounded-md border border-slate-200 bg-white p-1" role="group" aria-label="Analytics time window">
-                {[7, 30].map((days) => (
-                  <button
-                    key={days}
-                    type="button"
-                    onClick={() => setAnalyticsWindowDays(days as 7 | 30)}
-                    className={`rounded px-2 py-1 font-medium ${
-                      analyticsWindowDays === days ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    Last {days}d
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-3 rounded-md border border-slate-200 bg-white p-3 text-[11px] text-slate-600">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="font-semibold text-slate-700">Confidence floor auto-tuning (30d)</p>
-                  {receivablesData.recommendationCalibration ? (
-                    <p className="mt-1">
-                      Cap: <span className="font-semibold text-slate-800">{receivablesData.recommendationCalibration.maxRecommendedConfidence}</span>
-                      {" · "}
-                      <span
-                        className={`rounded px-1.5 py-0.5 font-medium ${recommendationCalibrationTone(
-                          receivablesData.recommendationCalibration.status,
-                        )}`}
-                      >
-                        {receivablesData.recommendationCalibration.status}
-                      </span>
-                    </p>
-                  ) : (
-                    <p className="mt-1">No calibration run yet. Run auto-tune to set a confidence cap from rolling error bands.</p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={runRecommendationCalibration}
-                  disabled={runningRecommendationCalibration}
-                  className="rounded bg-slate-900 px-2 py-1 font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-                >
-                  {runningRecommendationCalibration ? "Auto-tuning…" : "Auto-tune now"}
-                </button>
-              </div>
-              {receivablesData.recommendationCalibration && (
-                <p className="mt-2 text-slate-500">
-                  Conversion error/reminder: {(receivablesData.recommendationCalibration.conversionErrorPerReminder * 100).toFixed(1)}%
-                  {" · "}
-                  Cash error: {(receivablesData.recommendationCalibration.cashErrorRate * 100).toFixed(1)}%
-                  {" · "}
-                  Sample: {receivablesData.recommendationCalibration.remindersEvaluated} reminders
-                </p>
-              )}
-            </div>
-
-            {hasQueueAnalyticsData ? (
-              <>
-                <div className="mt-3 grid gap-2 md:grid-cols-3">
-                  <div>
-                    <p>Paid updates: <span className="font-semibold text-emerald-700">{selectedWindowAnalytics.actionCounts.mark_paid + selectedWindowAnalytics.actionCounts.bulk_mark_paid}</span></p>
-                    <p>Snoozes: <span className="font-semibold text-slate-700">{selectedWindowAnalytics.actionCounts.snooze + selectedWindowAnalytics.actionCounts.bulk_snooze}</span></p>
-                    <p>Partials: <span className="font-semibold text-amber-700">{selectedWindowAnalytics.actionCounts.mark_partial}</span></p>
-                  </div>
-                  <div>
-                    <p>Reminders logged: <span className="font-semibold text-indigo-700">{selectedWindowAnalytics.remindersSent}</span></p>
-                    <p>Email/SMS/WA: <span className="font-semibold">{selectedWindowAnalytics.reminderChannelCounts.email}/{selectedWindowAnalytics.reminderChannelCounts.sms}/{selectedWindowAnalytics.reminderChannelCounts.whatsapp}</span></p>
-                    <p>Phone/Other: <span className="font-semibold">{selectedWindowAnalytics.reminderChannelCounts.phone}/{selectedWindowAnalytics.reminderChannelCounts.other}</span></p>
-                  </div>
-                  <div>
-                    <p>Payments logged: <span className="font-semibold text-emerald-700">{selectedWindowAnalytics.paymentsCollectedCount}</span> ({money(selectedWindowAnalytics.paymentsCollectedAmount, currency)})</p>
-                    <p>Reminder → paid: <span className="font-semibold text-indigo-700">{selectedWindowAnalytics.reminderToPaidCount}</span> ({money(selectedWindowAnalytics.reminderToPaidAmount, currency)})</p>
-                    <p>Conversion rate: <span className="font-semibold">{Math.round(selectedWindowAnalytics.reminderToPaidRate * 100)}%</span></p>
-                  </div>
-                </div>
-
-                <div className="mt-3 grid gap-2 rounded-md border border-slate-200 bg-white p-3 md:grid-cols-4">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-wide text-slate-500">Recommendation match</p>
-                    <p className="text-sm font-semibold text-slate-800">{Math.round(selectedWindowAnalytics.recommendationBacktest.recommendationMatchRate * 100)}%</p>
-                    <p className="text-[11px] text-slate-500">
-                      {selectedWindowAnalytics.recommendationBacktest.matchedRecommendationCount}/
-                      {selectedWindowAnalytics.recommendationBacktest.remindersWithRecommendation} reminders used the suggested channel
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] uppercase tracking-wide text-slate-500">Predicted vs realized conversion</p>
-                    <p className="text-sm font-semibold text-slate-800">
-                      {selectedWindowAnalytics.recommendationBacktest.predictedConversions.toFixed(1)} vs {selectedWindowAnalytics.recommendationBacktest.realizedConversions.toFixed(1)}
-                    </p>
-                    <p className="text-[11px] text-slate-500">Expected paid invoices vs actual paid invoices</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] uppercase tracking-wide text-slate-500">Predicted cash collected</p>
-                    <p className="text-sm font-semibold text-indigo-700">{money(selectedWindowAnalytics.recommendationBacktest.predictedCollectedAmount, currency)}</p>
-                    <p className="text-[11px] text-slate-500">Model-estimated from channel/segment history</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] uppercase tracking-wide text-slate-500">Realized cash collected</p>
-                    <p className="text-sm font-semibold text-emerald-700">{money(selectedWindowAnalytics.recommendationBacktest.realizedCollectedAmount, currency)}</p>
-                    <p className="text-[11px] text-slate-500">Payments logged after reminders</p>
-                  </div>
-                </div>
-
-                <div className="mt-3 overflow-auto rounded-md border border-slate-200 bg-white">
-                  <table className="min-w-full text-[11px]">
-                    <thead className="bg-slate-50 text-left text-slate-500">
-                      <tr>
-                        <th className="px-2 py-1.5">Channel</th>
-                        <th className="px-2 py-1.5">Reminders</th>
-                        <th className="px-2 py-1.5">Converted</th>
-                        <th className="px-2 py-1.5">Rate</th>
-                        <th className="px-2 py-1.5">Collected</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reminderChannelRows.map((row) => (
-                        <tr key={row.key} className="border-t border-slate-100">
-                          <td className="px-2 py-1.5 font-medium text-slate-700">{row.label}</td>
-                          <td className="px-2 py-1.5">{row.remindersSent}</td>
-                          <td className="px-2 py-1.5 text-emerald-700">{row.convertedCount}</td>
-                          <td className="px-2 py-1.5">{Math.round(row.conversionRate * 100)}%</td>
-                          <td className="px-2 py-1.5 text-indigo-700">{money(row.convertedAmount, currency)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="mt-3 overflow-auto rounded-md border border-slate-200 bg-white">
-                  <table className="min-w-full text-[11px]">
-                    <thead className="bg-slate-50 text-left text-slate-500">
-                      <tr>
-                        <th className="px-2 py-1.5">Recommended channel backtest</th>
-                        <th className="px-2 py-1.5">Match rate</th>
-                        <th className="px-2 py-1.5">Pred conv.</th>
-                        <th className="px-2 py-1.5">Real conv.</th>
-                        <th className="px-2 py-1.5">Pred cash</th>
-                        <th className="px-2 py-1.5">Real cash</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recommendationBacktestRows.length === 0 ? (
-                        <tr>
-                          <td className="px-2 py-2 text-slate-500" colSpan={6}>No recommendation history in this window yet.</td>
-                        </tr>
-                      ) : (
-                        recommendationBacktestRows.map((row) => (
-                          <tr key={row.key} className="border-t border-slate-100">
-                            <td className="px-2 py-1.5 font-medium text-slate-700">{row.label}</td>
-                            <td className="px-2 py-1.5">
-                              {row.remindersEvaluated > 0 ? Math.round((row.matchedRecommendationCount / row.remindersEvaluated) * 100) : 0}%
-                            </td>
-                            <td className="px-2 py-1.5">{row.predictedConversions.toFixed(1)}</td>
-                            <td className="px-2 py-1.5 text-emerald-700">{row.realizedConversions.toFixed(1)}</td>
-                            <td className="px-2 py-1.5 text-indigo-700">{money(row.predictedCollectedAmount, currency)}</td>
-                            <td className="px-2 py-1.5 text-emerald-700">{money(row.realizedCollectedAmount, currency)}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="mt-3 grid gap-2 md:grid-cols-2">
-                  {selectedWindowAnalytics.recommendationBacktest.bySegment.map((segment) => (
-                    <div key={segment.segmentKey} className="rounded-md border border-slate-200 bg-white p-2 text-[11px] text-slate-600">
-                      <p className="font-semibold text-slate-700">
-                        {amountBucketLabel(segment.amountBucket)} • {overdueBucketLabel(segment.overdueBucket)}
-                      </p>
-                      <p>
-                        Pred conv {segment.predictedConversions.toFixed(1)} vs real {segment.realizedConversions.toFixed(1)} ·
-                        pred {money(segment.predictedCollectedAmount, currency)} vs real {money(segment.realizedCollectedAmount, currency)}
-                      </p>
-                      <p className="text-slate-500">{segment.remindersEvaluated} reminders tracked</p>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="mt-3 rounded-md border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-600">
-                No follow-up analytics yet. Log reminders and payment outcomes to unlock channel ROI and recommendation accuracy views.
-              </div>
-            )}
-          </div>
 
           <form onSubmit={submitReceivable} className="mt-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-6">
             <input
@@ -3266,13 +3119,12 @@ export default function Home() {
                     <th className="py-2">Customer</th>
                     <th className="py-2">Due</th>
                     <th className="py-2">Remaining</th>
-                    <th className="py-2">Follow-up</th>
-                    <th className="py-2">Priority</th>
+                    <th className="py-2">Status</th>
                     <th className="py-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {receivablesData.items.slice(0, 20).map((item) => {
+                  {receivablesData.items.slice(0, arShowAll ? receivablesData.items.length : 5).map((item) => {
                     const dueLabel = item.daysOverdue > 0
                       ? `${item.daysOverdue} day${item.daysOverdue === 1 ? "" : "s"} overdue`
                       : item.daysOverdue === 0
@@ -3293,10 +3145,7 @@ export default function Home() {
                           <div className="font-medium">{item.customerName}</div>
                           {item.description && <div className="text-xs text-slate-500">{item.description}</div>}
                           {item.promiseDate && (
-                            <div className="mt-1 text-[11px] text-indigo-700">Promise date: {formatIsoDateForDisplay(item.promiseDate)}</div>
-                          )}
-                          {item.nextFollowUpDate && (
-                            <div className="text-[11px] text-indigo-600">Next follow-up: {formatIsoDateForDisplay(item.nextFollowUpDate)}</div>
+                            <div className="mt-1 text-[11px] text-indigo-700">Promise: {formatIsoDateForDisplay(item.promiseDate)}</div>
                           )}
                         </td>
                         <td className="py-2">
@@ -3308,21 +3157,8 @@ export default function Home() {
                           <div className="text-xs text-slate-500">of {money(item.amount, currency)}</div>
                         </td>
                         <td className="py-2">
-                          <div className="capitalize">{item.status}</div>
-                          <div className="text-xs text-slate-500">
-                            {item.reminderCount} reminder{item.reminderCount === 1 ? "" : "s"}
-                          </div>
-                          <div className={`text-xs ${item.followUpStale ? "text-amber-700" : "text-slate-500"}`}>
-                            {item.followUpSnoozed && item.daysUntilNextFollowUp !== null && item.daysUntilNextFollowUp > 0
-                              ? `Snoozed ${item.daysUntilNextFollowUp}d`
-                              : item.daysSinceLastTouch === 0
-                                ? "Touched today"
-                                : `Last touch ${item.daysSinceLastTouch}d ago`}
-                          </div>
-                        </td>
-                        <td className="py-2">
                           <span
-                            className={`rounded px-2 py-1 text-xs font-medium ${
+                            className={`rounded px-2 py-1 text-xs font-medium capitalize ${
                               item.priority === "high"
                                 ? "bg-rose-100 text-rose-700"
                                 : item.priority === "medium"
@@ -3330,40 +3166,13 @@ export default function Home() {
                                   : "bg-emerald-100 text-emerald-700"
                             }`}
                           >
-                            {item.priority} ({item.riskScore})
+                            {item.status}
                           </span>
+                          <div className="text-xs text-slate-500 mt-1">
+                            {item.reminderCount} reminder{item.reminderCount === 1 ? "" : "s"}
+                          </div>
                         </td>
                         <td className="py-2">
-                          <p className="mb-1 text-xs text-slate-600">{item.suggestedAction}</p>
-                          <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px]">
-                            <span className="rounded bg-indigo-100 px-1.5 py-0.5 font-medium text-indigo-700">
-                              Best next channel: {reminderChannelLabel(item.recommendedReminderChannel)}
-                            </span>
-                            <span className={`rounded px-1.5 py-0.5 font-medium ${recommendationConfidenceTone(item.recommendedReminderConfidence)}`}>
-                              {item.recommendedReminderConfidence} confidence
-                            </span>
-                          </div>
-                          <p className="mb-1 text-[11px] text-slate-500">{item.recommendedReminderReason}</p>
-                          {item.recommendedReminderTags.length > 0 && (
-                            <div className="mb-1 flex flex-wrap gap-1 text-[10px] text-slate-500">
-                              {item.recommendedReminderTags.map((tag) => (
-                                <span key={`${item.id}-${tag}`} className="rounded bg-slate-100 px-1.5 py-0.5">
-                                  {tag.replace(":", " • ")}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {item.lastReminderAt && (
-                            <p className="mb-1 text-[11px] text-slate-500">
-                              Last reminder: {formatIsoDateForDisplay(item.lastReminderAt.slice(0, 10))}
-                              {item.lastReminderChannel ? ` via ${item.lastReminderChannel}` : ""}
-                            </p>
-                          )}
-                          {item.lastActionAt && item.lastActionType && (
-                            <p className="mb-1 text-[11px] text-slate-500">
-                              Last action: {item.lastActionType.replaceAll("_", " ")} on {formatIsoDateForDisplay(item.lastActionAt.slice(0, 10))}
-                            </p>
-                          )}
                           <div className="flex flex-wrap gap-1">
                             <button
                               onClick={() => generateReceivableReminder(item)}
@@ -3372,7 +3181,7 @@ export default function Home() {
                             >
                               {draftingReceivableId === item.id
                                 ? "Generating…"
-                                : `Draft + log (${reminderChannelLabel(item.recommendedReminderChannel)})`}
+                                : `Draft (${reminderChannelLabel(item.recommendedReminderChannel)})`}
                             </button>
                             <button
                               onClick={() => markReceivablePaid(item.id)}
@@ -3400,7 +3209,7 @@ export default function Home() {
                               disabled={receivableActionId === item.id}
                               className="rounded bg-violet-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-violet-300"
                             >
-                              Promise date
+                              Promise
                             </button>
                             <button
                               onClick={() => startEditingReceivable(item)}
@@ -3416,6 +3225,17 @@ export default function Home() {
                   })}
                 </tbody>
               </table>
+              {receivablesData.items.length > 5 && (
+                <div className="mt-3 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setArShowAll(!arShowAll)}
+                    className="text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+                  >
+                    {arShowAll ? "Show less" : `Show ${receivablesData.items.length - 5} more`}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -3455,10 +3275,10 @@ export default function Home() {
               </div>
             </div>
           )}
-        </section>} {/* end ar tab */}
+        </section> {/* end ar tab */}
 
         {/* ── MORE TAB — transactions list ─────────────── */}
-        {activeTab === "more" && <section className="grid gap-6">
+        <section className={`grid gap-6 ${activeTab !== "more" ? "hidden md:grid" : ""}`}>
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Recent transactions</h2>
@@ -3710,7 +3530,7 @@ export default function Home() {
               </ul>
             )}
           </div>
-        </section>} {/* end more tab transactions */}
+        </section> {/* end more tab transactions */}
 
         <datalist id="category-list">
           {data.categories.map((cat) => (
@@ -3719,7 +3539,6 @@ export default function Home() {
         </datalist>
       </main>
       <BottomNav active={activeTab} onChange={setActiveTab} />
-      <AICopilot />
     </div>
   );
 }

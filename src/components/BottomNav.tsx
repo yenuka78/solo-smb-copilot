@@ -61,7 +61,7 @@ export default function BottomNav({
   onChange: (tab: TabId) => void;
 }) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white md:hidden">
       <div className="mx-auto flex max-w-2xl items-center justify-around">
         {TABS.map((tab) => {
           const isActive = tab.id === active;

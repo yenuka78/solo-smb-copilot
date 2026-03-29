@@ -26,6 +26,7 @@ const SUGGESTED_PROMPTS = [
 export default function AICopilotInline() {
   const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
   const [inputText, setInputText] = useState("");
+  const [showModelSelector, setShowModelSelector] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { messages, sendMessage, status, stop, error, setMessages } = useChat({
@@ -58,17 +59,15 @@ export default function AICopilotInline() {
           <p className="text-xs text-indigo-200">Powered by your live business data</p>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            className="rounded-lg border border-indigo-500 bg-indigo-700 px-2 py-1 text-xs text-white focus:outline-none"
+          <button
+            onClick={() => setShowModelSelector(!showModelSelector)}
+            className="rounded-lg border border-indigo-500 bg-indigo-700 p-1.5 text-white hover:bg-indigo-800"
+            title="Model settings"
           >
-            {MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <path fillRule="evenodd" d="M7.84 1.804A1 1 0 018.82 1h2.36a1 1 0 01.98.804l.331 1.652a6.993 6.993 0 011.929 1.115l1.598-.54a1 1 0 011.186.447l1.18 2.044a1 1 0 01-.205 1.251l-1.267 1.113a7.047 7.047 0 010 2.228l1.267 1.113a1 1 0 01.206 1.25l-1.18 2.045a1 1 0 01-1.187.447l-1.598-.54a6.993 6.993 0 01-1.929 1.115l-.33 1.652a1 1 0 01-.98.804H8.82a1 1 0 01-.98-.804l-.331-1.652a6.993 6.993 0 01-1.929-1.115l-1.598.54a1 1 0 01-1.186-.447l-1.18-2.044a1 1 0 01.205-1.251l1.267-1.114a7.05 7.05 0 010-2.227L1.821 7.773a1 1 0 01-.206-1.25l1.18-2.045a1 1 0 011.187-.447l1.598.54A6.993 6.993 0 017.51 3.456l.33-1.652zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+            </svg>
+          </button>
           {messages.length > 0 && (
             <button
               onClick={() => setMessages([])}
@@ -80,6 +79,24 @@ export default function AICopilotInline() {
           )}
         </div>
       </div>
+
+      {/* Model selector (hidden by default) */}
+      {showModelSelector && (
+        <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 flex items-center gap-2">
+          <label className="text-xs text-slate-500 shrink-0">Model:</label>
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          >
+            {MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} ({m.provider})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
@@ -182,7 +199,7 @@ export default function AICopilotInline() {
           )}
         </form>
         <p className="mt-1.5 text-center text-[10px] text-slate-400">
-          {MODELS.find((m) => m.id === selectedModel)?.provider} · Enter to send
+          {MODELS.find((m) => m.id === selectedModel)?.label} · Enter to send
         </p>
       </div>
     </div>
