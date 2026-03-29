@@ -1969,7 +1969,7 @@ export default function Home() {
         {statusMessage && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{statusMessage}</div>}
 
         {/* ── HOME TAB ─────────────────────────────────── */}
-        <div className={`flex flex-col gap-6 ${activeTab !== "home" ? "hidden md:flex" : ""}`}>
+        <div className={`flex flex-col gap-6 ${activeTab !== "home" ? "hidden" : ""}`}>
 
         {!onboardingDismissed && (
           <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
@@ -2363,7 +2363,7 @@ export default function Home() {
         </div>
 
         {/* ── MORE TAB — settings/billing/export ───────── */}
-        <div className={`flex flex-col gap-6 ${activeTab !== "more" ? "hidden md:flex" : ""}`}>
+        <div className={`flex flex-col gap-6 ${activeTab !== "more" ? "hidden" : ""}`}>
         <section className="grid gap-6">
           <div id="settings-section" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 lg:col-span-2">
             <h2 className="text-lg font-semibold">Settings & assistant tools</h2>
@@ -2729,7 +2729,7 @@ export default function Home() {
         </div>
 
         {/* ── ADD TAB — log transaction / deadline / upload ── */}
-        <div className={`flex flex-col gap-6 ${(activeTab !== "add" && !editingId) ? "hidden md:flex" : ""}`}>
+        <div className={`flex flex-col gap-6 ${(activeTab !== "add" && !editingId) ? "hidden" : ""}`}>
           <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1 gap-1">
             {(["transaction", "receipt", "deadline"] as const).map(t => (
               <button key={t} onClick={() => setAddType(t)}
@@ -2973,7 +2973,7 @@ export default function Home() {
         </div>
 
         {/* ── AR TAB ───────────────────────────────────── */}
-        <section className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 ${activeTab !== "ar" ? "hidden md:block" : ""}`}>
+        <section className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 ${activeTab !== "ar" ? "hidden" : ""}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">AR follow-up queue</h2>
@@ -3278,7 +3278,7 @@ export default function Home() {
         </section> {/* end ar tab */}
 
         {/* ── MORE TAB — transactions list ─────────────── */}
-        <section className={`grid gap-6 ${activeTab !== "more" ? "hidden md:grid" : ""}`}>
+        <section className={`grid gap-6 ${activeTab !== "more" ? "hidden" : ""}`}>
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Recent transactions</h2>
