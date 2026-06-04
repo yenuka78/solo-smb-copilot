@@ -344,6 +344,23 @@ type BillingStatusPayload = {
   } | null;
 };
 
+type SectionNavigationTarget = {
+  tab: TabId;
+  sectionId: string;
+  addType?: "transaction" | "receipt" | "deadline";
+};
+
+const onboardingStepNavigationTargets: Record<OnboardingStepKey, SectionNavigationTarget> = {
+  set_tax_rate: { tab: "more", sectionId: "tax-rate-section" },
+  set_revenue_goal: { tab: "more", sectionId: "revenue-goal-section" },
+  set_expense_limit: { tab: "more", sectionId: "expense-limit-section" },
+  add_first_transaction: { tab: "home", sectionId: "transactions-section" },
+  add_first_deadline: { tab: "home", sectionId: "deadlines-section" },
+  upload_first_receipt: { tab: "add", sectionId: "upload-section", addType: "receipt" },
+  check_tax_reserve: { tab: "home", sectionId: "dashboard-summary-section" },
+  check_expense_limit: { tab: "more", sectionId: "expense-limit-section" },
+};
+
 type DashboardPayload = {
   summary: {
     monthRevenue: number;
@@ -426,6 +443,23 @@ type DashboardPayload = {
     }[];
   };
   categories: string[];
+};
+
+type ReceivableActionModalType =
+  | "idle"
+  | "mark_partial"
+  | "snooze"
+  | "set_promise_date"
+  | "bulk_mark_paid"
+  | "bulk_snooze"
+  | "delete_transaction"
+  | "delete_deadline";
+
+type ReceivableActionModalState = {
+  open: boolean;
+  type: ReceivableActionModalType;
+  receivableId: string;
+  value: string;
 };
 
 const defaultAnalyticsSlice: ReceivableAnalyticsSlice = {
@@ -628,7 +662,7 @@ const defaultPayload: DashboardPayload = {
     highConfidenceAutoParsedCount: 0,
   },
   onboarding: {
-    totalSteps: 7,
+    totalSteps: 8,
     completedSteps: 0,
     percent: 0,
     allCompleted: false,
@@ -676,6 +710,12 @@ const defaultPayload: DashboardPayload = {
         description: "Review the suggested tax reserve on the dashboard.",
         completed: false,
       },
+      {
+        key: "check_expense_limit",
+        label: "Check your expense limit",
+        description: "Review the expense limit progress on the dashboard.",
+        completed: false,
+      },
     ],
   },
   categories: [],
@@ -697,30 +737,37 @@ function reminderChannelLabel(channel: ReceivableQueueItem["recommendedReminderC
   return "Email";
 }
 
-function recommendationConfidenceTone(confidence: ReceivableQueueItem["recommendedReminderConfidence"]): string {
-  if (confidence === "high") return "bg-emerald-100 text-emerald-700";
-  if (confidence === "medium") return "bg-amber-100 text-amber-700";
-  return "bg-slate-100 text-slate-600";
-}
+const DEFAULT_CATEGORY_SUGGESTIONS: Record<"revenue" | "expense", string[]> = {
+  revenue: ["Services", "Retainer", "Project deposit", "Product sales"],
+  expense: ["Software", "Advertising", "Office supplies", "Travel"],
+};
 
-function recommendationCalibrationTone(status: "stable" | "watch" | "degraded"): string {
-  if (status === "stable") return "bg-emerald-100 text-emerald-700";
-  if (status === "watch") return "bg-amber-100 text-amber-700";
-  return "bg-rose-100 text-rose-700";
-}
+const DEADLINE_TEMPLATES: Array<{ title: string; recurring: "none" | "monthly" | "quarterly" }> = [
+  { title: "Quarterly estimated tax payment", recurring: "quarterly" },
+  { title: "Monthly bookkeeping close", recurring: "monthly" },
+  { title: "Sales tax filing", recurring: "monthly" },
+  { title: "Annual business filing", recurring: "none" },
+];
 
-function amountBucketLabel(bucket: "micro" | "small" | "mid" | "large"): string {
-  if (bucket === "large") return "$10k+";
-  if (bucket === "mid") return "$3k-$9.9k";
-  if (bucket === "small") return "$800-$2.9k";
-  return "<$800";
-}
+function ownerActionCta(action: OwnerActionsPayload["brief"]["topActions"][number]): {
+  label: string;
+  target: SectionNavigationTarget;
+} {
+  if (action.category === "collections") {
+    return { label: "Open AR queue", target: { tab: "ar", sectionId: "receivables-section" } };
+  }
 
-function overdueBucketLabel(bucket: "upcoming" | "due_now" | "overdue_1_14" | "overdue_15_plus"): string {
-  if (bucket === "due_now") return "Due today";
-  if (bucket === "overdue_1_14") return "Overdue 1-14d";
-  if (bucket === "overdue_15_plus") return "Overdue 15+d";
-  return "Upcoming";
+  if (action.category === "compliance") {
+    return {
+      label: "Add or review deadline",
+      target: { tab: "add", sectionId: "deadline-form-section", addType: "deadline" },
+    };
+  }
+
+  return {
+    label: "Open transaction log",
+    target: { tab: "add", sectionId: "transaction-form-section", addType: "transaction" },
+  };
 }
 
 export default function Home() {
@@ -801,18 +848,62 @@ export default function Home() {
   const [bulkReceivableAction, setBulkReceivableAction] = useState<"mark_paid" | "snooze" | "draft" | null>(null);
   const [bulkReminderChannel, setBulkReminderChannel] = useState<"email" | "sms" | "whatsapp" | "phone" | "other">("email");
   const [bulkReminderDrafts, setBulkReminderDrafts] = useState<Array<{ id: string; customerName: string; draft: string }> | null>(null);
-  const [analyticsWindowDays, setAnalyticsWindowDays] = useState<7 | 30>(7);
-  const [runningRecommendationCalibration, setRunningRecommendationCalibration] = useState(false);
   const [transactionFilter, setTransactionFilter] = useState<"all" | "revenue" | "expense" | "review">("all");
   const [transactionSearch, setTransactionSearch] = useState("");
+  const [showTransactionSearchHelp, setShowTransactionSearchHelp] = useState(false);
   const [addType, setAddType] = useState<"transaction" | "receipt" | "deadline">("transaction");
   const [arShowAll, setArShowAll] = useState(false);
+  const [receivableActionModal, setReceivableActionModal] = useState<ReceivableActionModalState>({
+    open: false,
+    type: "idle",
+    receivableId: "",
+    value: "",
+  });
 
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth" });
+    if (element && element.getClientRects().length > 0) {
+      const prefersReducedMotion =
+        typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      element.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+      return true;
     }
+    return false;
+  };
+
+  const navigateToSection = ({ tab, sectionId, addType: nextAddType }: SectionNavigationTarget) => {
+    setActiveTab(tab);
+    if (tab === "add" && nextAddType) {
+      setAddType(nextAddType);
+    }
+
+    const tryScroll = (attempt = 0) => {
+      if (scrollToSection(sectionId) || attempt >= 12) {
+        return;
+      }
+
+      window.setTimeout(() => {
+        tryScroll(attempt + 1);
+      }, 50);
+    };
+
+    window.setTimeout(() => {
+      tryScroll();
+    }, 0);
+  };
+
+  const openOwnerAction = (action: OwnerActionsPayload["brief"]["topActions"][number]) => {
+    const cta = ownerActionCta(action);
+    navigateToSection(cta.target);
+  };
+
+  const applyDeadlineTemplate = (template: { title: string; recurring: "none" | "monthly" | "quarterly" }) => {
+    setDeadlineForm((prev) => ({
+      ...prev,
+      title: template.title,
+      recurring: template.recurring,
+    }));
+    setStatusMessage(`Preset applied: ${template.title}. Confirm the due date before saving.`);
   };
 
   const currency = useMemo(() => data.settings.currency || "USD", [data.settings.currency]);
@@ -822,45 +913,6 @@ export default function Home() {
     billingStatusData.subscription?.status === "past_due" ||
     billingStatusData.subscription?.status === "unpaid";
 
-  const selectedWindowAnalytics = useMemo(
-    () => (analyticsWindowDays === 7 ? receivablesData.analytics.windows["7d"] : receivablesData.analytics.windows["30d"]),
-    [analyticsWindowDays, receivablesData.analytics.windows],
-  );
-
-  const reminderChannelRows = useMemo(
-    () =>
-      ([
-        ["email", "Email"],
-        ["sms", "SMS"],
-        ["whatsapp", "WhatsApp"],
-        ["phone", "Phone"],
-        ["other", "Other"],
-      ] as const).map(([key, label]) => ({
-        key,
-        label,
-        ...selectedWindowAnalytics.reminderChannelPerformance[key],
-      })),
-    [selectedWindowAnalytics.reminderChannelPerformance],
-  );
-
-  const recommendationBacktestRows = useMemo(
-    () =>
-      ([
-        ["email", "Email"],
-        ["sms", "SMS"],
-        ["whatsapp", "WhatsApp"],
-        ["phone", "Phone"],
-        ["other", "Other"],
-      ] as const)
-        .map(([key, label]) => ({
-          key,
-          label,
-          ...selectedWindowAnalytics.recommendationBacktest.byChannel[key],
-        }))
-        .filter((row) => row.remindersEvaluated > 0),
-    [selectedWindowAnalytics.recommendationBacktest.byChannel],
-  );
-
   const hasCashRunwayData = useMemo(
     () =>
       cashRunwayData.summary.currentBalance !== 0 ||
@@ -868,20 +920,6 @@ export default function Home() {
       cashRunwayData.summary.expectedReceivableInflow14d !== 0 ||
       receivablesData.totals.openCount > 0,
     [cashRunwayData.summary.currentBalance, cashRunwayData.summary.averageDailyNet, cashRunwayData.summary.expectedReceivableInflow14d, receivablesData.totals.openCount],
-  );
-
-  const hasQueueAnalyticsData = useMemo(
-    () =>
-      selectedWindowAnalytics.totalLoggedActions > 0 ||
-      selectedWindowAnalytics.remindersSent > 0 ||
-      selectedWindowAnalytics.paymentsCollectedCount > 0 ||
-      selectedWindowAnalytics.reminderToPaidCount > 0,
-    [
-      selectedWindowAnalytics.totalLoggedActions,
-      selectedWindowAnalytics.remindersSent,
-      selectedWindowAnalytics.paymentsCollectedCount,
-      selectedWindowAnalytics.reminderToPaidCount,
-    ],
   );
 
   const filteredTransactions = useMemo(() => {
@@ -912,6 +950,24 @@ export default function Home() {
   }, [filteredTransactions]);
 
   const filteredNet = filteredSummary.revenue - filteredSummary.expense;
+
+  function openReceivableActionModal(type: ReceivableActionModalType, receivableId = "", value = "") {
+    setReceivableActionModal({
+      open: true,
+      type,
+      receivableId,
+      value,
+    });
+  }
+
+  function closeReceivableActionModal() {
+    setReceivableActionModal({
+      open: false,
+      type: "idle",
+      receivableId: "",
+      value: "",
+    });
+  }
 
   async function refresh() {
     setLoading(true);
@@ -1179,7 +1235,7 @@ export default function Home() {
       const response = await fetch("/api/deadlines", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ id, toggleStatusOnly: true }),
       });
 
       if (!response.ok) {
@@ -1506,13 +1562,16 @@ export default function Home() {
     }
   }
 
-  async function markReceivablePartial(receivable: ReceivableQueueItem) {
-    const input = prompt("How much was paid?", "0");
-    if (input === null) return;
-
+  async function submitReceivablePartialPayment(receivableId: string, input: string) {
     const paymentAmount = Number(input);
     if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
       setError("Enter a payment amount greater than zero.");
+      return;
+    }
+
+    const receivable = receivablesData.items.find((item) => item.id === receivableId);
+    if (!receivable) {
+      setError("Receivable not found.");
       return;
     }
 
@@ -1539,11 +1598,12 @@ export default function Home() {
     }
   }
 
-  async function snoozeReceivable(receivable: ReceivableQueueItem) {
-    const defaultDate = new Date();
-    defaultDate.setDate(defaultDate.getDate() + 3);
-    const input = prompt("Snooze follow-up until (YYYY-MM-DD)", defaultDate.toISOString().slice(0, 10));
-    if (input === null) return;
+  async function submitReceivableSnooze(receivableId: string, input: string) {
+    const receivable = receivablesData.items.find((item) => item.id === receivableId);
+    if (!receivable) {
+      setError("Receivable not found.");
+      return;
+    }
 
     setError(null);
     setReceivableActionId(receivable.id);
@@ -1552,7 +1612,7 @@ export default function Home() {
       const response = await fetch("/api/receivables", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: receivable.id, action: "snooze", nextFollowUpDate: input }),
+        body: JSON.stringify({ id: receivable.id, action: "snooze", nextFollowUpDate: input.trim() }),
       });
 
       if (!response.ok) {
@@ -1568,10 +1628,12 @@ export default function Home() {
     }
   }
 
-  async function setReceivablePromiseDate(receivable: ReceivableQueueItem) {
-    const defaultDate = receivable.promiseDate ?? receivable.dueDate;
-    const input = prompt("Promise-to-pay date (YYYY-MM-DD). Leave blank to clear.", defaultDate);
-    if (input === null) return;
+  async function submitReceivablePromiseDate(receivableId: string, input: string) {
+    const receivable = receivablesData.items.find((item) => item.id === receivableId);
+    if (!receivable) {
+      setError("Receivable not found.");
+      return;
+    }
 
     setError(null);
     setReceivableActionId(receivable.id);
@@ -1600,6 +1662,20 @@ export default function Home() {
     }
   }
 
+  function markReceivablePartial(receivable: ReceivableQueueItem) {
+    openReceivableActionModal("mark_partial", receivable.id, "0");
+  }
+
+  function snoozeReceivable(receivable: ReceivableQueueItem) {
+    const defaultDate = new Date();
+    defaultDate.setDate(defaultDate.getDate() + 3);
+    openReceivableActionModal("snooze", receivable.id, defaultDate.toISOString().slice(0, 10));
+  }
+
+  function setReceivablePromiseDate(receivable: ReceivableQueueItem) {
+    openReceivableActionModal("set_promise_date", receivable.id, receivable.promiseDate ?? receivable.dueDate);
+  }
+
   function toggleReceivableSelection(receivableId: string) {
     setSelectedReceivableIds((prev) =>
       prev.includes(receivableId) ? prev.filter((id) => id !== receivableId) : [...prev, receivableId],
@@ -1622,8 +1698,10 @@ export default function Home() {
       return;
     }
 
-    if (!confirm(`Mark ${selectedReceivableIds.length} selected receivable(s) as paid?`)) return;
+    openReceivableActionModal("bulk_mark_paid");
+  }
 
+  async function confirmBulkMarkReceivablesPaid() {
     setError(null);
     setBulkReceivableAction("mark_paid");
 
@@ -1659,9 +1737,10 @@ export default function Home() {
 
     const defaultDate = new Date();
     defaultDate.setDate(defaultDate.getDate() + 3);
-    const input = prompt("Snooze selected follow-ups until (YYYY-MM-DD)", defaultDate.toISOString().slice(0, 10));
-    if (input === null) return;
+    openReceivableActionModal("bulk_snooze", "", defaultDate.toISOString().slice(0, 10));
+  }
 
+  async function submitBulkSnoozeReceivables(input: string) {
     setError(null);
     setBulkReceivableAction("snooze");
 
@@ -1728,37 +1807,6 @@ export default function Home() {
     }
   }
 
-  async function runRecommendationCalibration() {
-    setError(null);
-    setRunningRecommendationCalibration(true);
-
-    try {
-      const response = await fetch("/api/receivables/recommendation-calibration", {
-        method: "POST",
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(payload?.error || "Failed to auto-tune confidence floors");
-        return;
-      }
-
-      const payload = (await response.json()) as {
-        recommendationCalibration: {
-          maxRecommendedConfidence: "low" | "medium" | "high";
-          status: "stable" | "watch" | "degraded";
-        };
-      };
-
-      setStatusMessage(
-        `Confidence auto-tune updated: cap ${payload.recommendationCalibration.maxRecommendedConfidence} (${payload.recommendationCalibration.status}).`,
-      );
-      await refresh();
-    } finally {
-      setRunningRecommendationCalibration(false);
-    }
-  }
-
   async function copyAllBulkReminderDrafts() {
     if (!bulkReminderDrafts || bulkReminderDrafts.length === 0) return;
 
@@ -1817,8 +1865,10 @@ export default function Home() {
   }
 
   async function deleteTransaction(id: string) {
-    if (!confirm("Are you sure you want to delete this transaction?")) return;
+    openReceivableActionModal("delete_transaction", id);
+  }
 
+  async function confirmDeleteTransaction(id: string) {
     setError(null);
     setDeletingId(id);
     try {
@@ -1845,8 +1895,10 @@ export default function Home() {
   }
 
   async function deleteDeadline(id: string) {
-    if (!confirm("Are you sure you want to delete this deadline?")) return;
+    openReceivableActionModal("delete_deadline", id);
+  }
 
+  async function confirmDeleteDeadline(id: string) {
     setError(null);
     setDeletingDeadlineId(id);
     try {
@@ -1865,6 +1917,45 @@ export default function Home() {
       await refresh();
     } finally {
       setDeletingDeadlineId(null);
+    }
+  }
+
+  async function confirmReceivableActionModal() {
+    const { receivableId, type, value } = receivableActionModal;
+    closeReceivableActionModal();
+
+    if (type === "mark_partial") {
+      await submitReceivablePartialPayment(receivableId, value);
+      return;
+    }
+
+    if (type === "snooze") {
+      await submitReceivableSnooze(receivableId, value);
+      return;
+    }
+
+    if (type === "set_promise_date") {
+      await submitReceivablePromiseDate(receivableId, value);
+      return;
+    }
+
+    if (type === "bulk_mark_paid") {
+      await confirmBulkMarkReceivablesPaid();
+      return;
+    }
+
+    if (type === "bulk_snooze") {
+      await submitBulkSnoozeReceivables(value);
+      return;
+    }
+
+    if (type === "delete_transaction") {
+      await confirmDeleteTransaction(receivableId);
+      return;
+    }
+
+    if (type === "delete_deadline") {
+      await confirmDeleteDeadline(receivableId);
     }
   }
 
@@ -1921,6 +2012,13 @@ export default function Home() {
   const sortedDeadlines = useMemo(() => {
     return sortDeadlinesForDisplay(data.deadlines, new Date());
   }, [data.deadlines]);
+
+  const suggestedCategories = useMemo(() => {
+    const merged = [...DEFAULT_CATEGORY_SUGGESTIONS[txForm.type as "revenue" | "expense"], ...data.categories];
+    return [...new Set(merged)].slice(0, 6);
+  }, [data.categories, txForm.type]);
+
+  const todayFocusActions = useMemo(() => ownerActionsData.brief.topActions.slice(0, 3), [ownerActionsData.brief.topActions]);
 
   const recurringLabelMap: Record<DashboardPayload["deadlines"][number]["recurring"], string> = {
     none: "one-time",
@@ -2021,18 +2119,7 @@ export default function Home() {
                   </div>
                   {!step.completed && (
                     <button
-                      onClick={() => {
-                        const mapping: Record<string, string> = {
-                          set_tax_rate: "settings-section",
-                          set_revenue_goal: "settings-section",
-                          set_expense_limit: "settings-section",
-                          add_first_transaction: "transaction-form-section",
-                          add_first_deadline: "deadline-form-section",
-                          upload_first_receipt: "upload-section",
-                          check_tax_reserve: "dashboard-metrics",
-                        };
-                        scrollToSection(mapping[step.key]);
-                      }}
+                      onClick={() => navigateToSection(onboardingStepNavigationTargets[step.key])}
                       className="mt-3 w-fit rounded-lg bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-700"
                     >
                       Go to section →
@@ -2073,6 +2160,57 @@ export default function Home() {
             </button>
           </div>
         )}
+
+        <section id="dashboard-summary-section" className="rounded-2xl border border-slate-200 bg-slate-900 p-5 text-white shadow-sm md:col-span-2">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-200">Today&apos;s Plan</p>
+              <h2 className="mt-1 text-xl font-semibold">Focus on the next few moves that improve cash fastest.</h2>
+              <p className="mt-2 max-w-2xl text-sm text-slate-300">
+                This view turns the data into owner actions. Open the linked workflow and clear the highest-impact item first.
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-right">
+              <p className="text-[11px] uppercase tracking-wide text-slate-400">Risk flags</p>
+              <p className="mt-1 text-2xl font-semibold">{data.summary.riskFlags.length}</p>
+              <p className="text-xs text-slate-400">{receivablesData.totals.overdueCount} overdue invoices · {data.summary.overdueDeadlines} overdue deadlines</p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {todayFocusActions.map((action, index) => {
+              const cta = ownerActionCta(action);
+              return (
+                <article key={action.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-200">
+                    Priority {index + 1} · {action.category.replaceAll("_", " ")}
+                  </p>
+                  <h3 className="mt-2 text-base font-semibold">{action.title}</h3>
+                  <p className="mt-2 text-sm text-slate-300">{action.description}</p>
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">14-day impact</p>
+                      <p className="text-sm font-semibold text-emerald-300">{money(action.expectedCashImpact14d, currency)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openOwnerAction(action)}
+                      className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-100"
+                    >
+                      {cta.label}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          {todayFocusActions.length === 0 && (
+            <div className="mt-4 rounded-2xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-slate-300">
+              Add a few transactions, deadlines, or receivables and this section will turn into a daily operating plan.
+            </div>
+          )}
+        </section>
 
         <section id="dashboard-metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 md:col-span-2">
           <MetricCard
@@ -2135,7 +2273,7 @@ export default function Home() {
           </div>
         </CollapsibleSection>
 
-        <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+        <section id="cash-runway-section" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">Cash runway + 14-day risk projection</h2>
@@ -2251,7 +2389,7 @@ export default function Home() {
           </CollapsibleSection>
         </section>
 
-        <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+        <section id="owner-actions-section" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">Weekly Top 5 owner actions</h2>
@@ -2280,11 +2418,20 @@ export default function Home() {
                   <h3 className="mt-1 text-sm font-semibold text-slate-900">{action.title}</h3>
                   <p className="mt-2 text-xs text-slate-600">{action.description}</p>
                   <p className="mt-3 text-xs text-slate-500">{action.rationale}</p>
-                  <div className="mt-3 flex items-center justify-between text-xs">
+                  <div className="mt-3 flex items-center justify-between gap-3 text-xs">
                     <span className="rounded-full bg-emerald-100 px-2 py-1 font-medium text-emerald-700">
                       {money(action.expectedCashImpact14d, currency)}
                     </span>
-                    <span className="text-slate-500">{action.confidence} confidence</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-slate-500">{action.confidence} confidence</span>
+                      <button
+                        type="button"
+                        onClick={() => openOwnerAction(action)}
+                        className="rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-700"
+                      >
+                        {ownerActionCta(action).label}
+                      </button>
+                    </div>
                   </div>
                 </article>
               ))}
@@ -2297,11 +2444,20 @@ export default function Home() {
                         <h3 className="mt-1 text-sm font-semibold text-slate-900">{action.title}</h3>
                         <p className="mt-2 text-xs text-slate-600">{action.description}</p>
                         <p className="mt-3 text-xs text-slate-500">{action.rationale}</p>
-                        <div className="mt-3 flex items-center justify-between text-xs">
+                        <div className="mt-3 flex items-center justify-between gap-3 text-xs">
                           <span className="rounded-full bg-emerald-100 px-2 py-1 font-medium text-emerald-700">
                             {money(action.expectedCashImpact14d, currency)}
                           </span>
-                          <span className="text-slate-500">{action.confidence} confidence</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-slate-500">{action.confidence} confidence</span>
+                            <button
+                              type="button"
+                              onClick={() => openOwnerAction(action)}
+                              className="rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-700"
+                            >
+                              {ownerActionCta(action).label}
+                            </button>
+                          </div>
                         </div>
                       </article>
                     ))}
@@ -2534,7 +2690,7 @@ export default function Home() {
 
             <CollapsibleSection title="Business info" defaultOpen={true}>
               <div className="space-y-4 pt-2">
-                <div className="space-y-2">
+                <div id="tax-rate-section" className="space-y-2">
                   <label className="block text-sm font-medium" htmlFor="tax-rate">Tax reserve rate (%)</label>
                   <input
                     id="tax-rate"
@@ -2547,7 +2703,7 @@ export default function Home() {
                   />
                   <p className="text-xs text-slate-500">Tip: many solo businesses keep 20–35% reserved based on local tax rules.</p>
                 </div>
-                <div className="space-y-2">
+                <div id="revenue-goal-section" className="space-y-2">
                   <label className="block text-sm font-medium" htmlFor="revenue-goal">Monthly revenue goal ({currency})</label>
                   <input
                     id="revenue-goal"
@@ -2559,7 +2715,7 @@ export default function Home() {
                     onChange={(e) => setRevenueGoal(e.target.value)}
                   />
                 </div>
-                <div className="space-y-2">
+                <div id="expense-limit-section" className="space-y-2">
                   <label className="block text-sm font-medium" htmlFor="expense-limit">Monthly expense limit ({currency})</label>
                   <input
                     id="expense-limit"
@@ -2818,21 +2974,22 @@ export default function Home() {
                 value={txForm.category}
                 onChange={(e) => setTxForm((prev) => ({ ...prev, category: e.target.value }))}
               />
-              {data.categories.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  <span className="text-[10px] text-slate-400 mr-1 self-center">Quick:</span>
-                  {data.categories.slice(0, 4).map(cat => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setTxForm(prev => ({ ...prev, category: cat }))}
-                      className="px-2 py-0.5 text-[10px] bg-slate-100 border border-slate-200 rounded-full hover:bg-slate-200 transition"
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div className="mt-1 flex flex-wrap gap-1">
+                <span className="mr-1 self-center text-[10px] text-slate-400">Quick:</span>
+                {suggestedCategories.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setTxForm((prev) => ({ ...prev, category: cat }))}
+                    className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] transition hover:bg-slate-200"
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Start with a broad category now. You can refine it later without breaking totals.
+              </p>
 
               <label className="text-xs font-medium text-slate-600" htmlFor="tx-description">Description (optional)</label>
               <input
@@ -2909,6 +3066,24 @@ export default function Home() {
                 <option value="monthly">Monthly</option>
                 <option value="quarterly">Quarterly</option>
               </select>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Common presets</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {DEADLINE_TEMPLATES.map((template) => (
+                    <button
+                      key={template.title}
+                      type="button"
+                      onClick={() => applyDeadlineTemplate(template)}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+                    >
+                      {template.title}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Presets only fill the label and repeat cadence. Confirm the real due date for your business before saving.
+                </p>
+              </div>
               <button
                 type="submit"
                 disabled={savingDeadline}
@@ -2982,7 +3157,7 @@ export default function Home() {
         </div>
 
         {/* ── AR TAB ───────────────────────────────────── */}
-        <section className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 ${activeTab !== "ar" ? "hidden" : ""}`}>
+        <section id="receivables-section" className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 ${activeTab !== "ar" ? "hidden" : ""}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">AR follow-up queue</h2>
@@ -3295,7 +3470,7 @@ export default function Home() {
 
         {/* ── MORE TAB — transactions list ─────────────── */}
         <section className={`grid gap-6 ${activeTab !== "more" ? "hidden" : ""}`}>
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+          <div id="transactions-section" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Recent transactions</h2>
               <div className="flex gap-4">
@@ -3364,21 +3539,39 @@ export default function Home() {
                   </button>
                 ))}
               </div>
-              <div className="relative w-full md:w-64">
-                <input
-                  type="text"
-                  placeholder="Search date, amount, category, type, ‘today’, ‘this week’, ‘mtd’, ‘ytd’, ‘last 14 days’, ‘last 60 days’, ‘next 7 days’, ‘next 60 days’, ‘last 2 weeks’, ‘q1 2026’, ‘fy2026’, ‘this year’/‘this yr’, ‘this quarter’/‘this qtr’, or ‘this fiscal year’..."
-                  value={transactionSearch}
-                  onChange={(e) => setTransactionSearch(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400"
-                />
-                {transactionSearch && (
+              <div className="w-full md:w-64">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search transactions..."
+                    value={transactionSearch}
+                    onChange={(e) => setTransactionSearch(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 pr-12 text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  />
                   <button
-                    onClick={() => setTransactionSearch("")}
-                    className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600"
+                    type="button"
+                    onClick={() => setShowTransactionSearchHelp((current) => !current)}
+                    title="Search help"
+                    aria-label="Show transaction search help"
+                    aria-expanded={showTransactionSearchHelp}
+                    className="absolute right-7 top-1.5 text-xs font-semibold text-slate-400 hover:text-slate-600"
                   >
-                    ✕
+                    ℹ
                   </button>
+                  {transactionSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setTransactionSearch("")}
+                      className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                {showTransactionSearchHelp && (
+                  <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                    Examples: <span className="font-medium">today</span>, <span className="font-medium">this month</span>, <span className="font-medium">last 30 days</span>, <span className="font-medium">q1 2026</span>, <span className="font-medium">revenue</span>, <span className="font-medium">office supplies</span>.
+                  </div>
                 )}
               </div>
             </div>
@@ -3431,88 +3624,172 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <div className="mt-4 overflow-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="text-left text-slate-500">
-                    <tr>
-                      <th className="py-2">Date</th>
-                      <th className="py-2">Type</th>
-                      <th className="py-2">Category</th>
-                      <th className="py-2">Description</th>
-                      <th className="py-2">Amount</th>
-                      <th className="py-2">OCR</th>
-                      <th className="py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTransactions.map((tx) => {
-                      const relativeLabel = getRelativeDateLabel(tx.date);
+              <>
+                <div className="mt-4 space-y-3 md:hidden">
+                  {filteredTransactions.map((tx) => {
+                    const relativeLabel = getRelativeDateLabel(tx.date);
 
-                      return (
-                        <tr key={tx.id} className="border-t border-slate-100">
-                          <td className="py-2">
-                            <div>{formatIsoDateForDisplay(tx.date)}</div>
+                    return (
+                      <div key={tx.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">{formatIsoDateForDisplay(tx.date)}</div>
                             {relativeLabel && (
                               <div className="text-[10px] font-bold uppercase text-indigo-500">
                                 {relativeLabel}
                               </div>
                             )}
-                          </td>
-                          <td className="py-2 capitalize">{tx.type}</td>
-                        <td className="py-2">{tx.category}</td>
-                        <td className="py-2 text-slate-500 truncate max-w-[200px]" title={tx.description}>
-                          {tx.description}
-                        </td>
-                        <td className={`py-2 font-medium ${tx.type === "revenue" ? "text-emerald-700" : "text-rose-700"}`}>
-                          {tx.type === "revenue" ? "+" : "-"}
-                          {money(tx.amount, currency)}
-                        </td>
-                        <td className="py-2 text-xs">
-                          {tx.ocr ? (
-                            tx.ocr.reviewNeeded ? (
-                              <span className="rounded bg-amber-100 px-2 py-1 text-amber-700">Needs review</span>
-                            ) : (
-                              <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">
-                                {Math.round(tx.ocr.extractionConfidence * 100)}% confidence
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-slate-400">Manual</span>
-                          )}
-                        </td>
-                        <td className="py-2 text-right">
-                          <button
-                            onClick={() => startEditing(tx)}
-                            disabled={Boolean(editingId)}
-                            className="mr-3 text-xs text-blue-600 hover:text-blue-800 hover:underline disabled:text-slate-400 disabled:no-underline"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => duplicateTransaction(tx)}
-                            disabled={Boolean(editingId)}
-                            className="mr-3 text-xs text-indigo-600 hover:text-indigo-800 hover:underline disabled:text-slate-400 disabled:no-underline"
-                          >
-                            Duplicate
-                          </button>
-                          <button
-                            onClick={() => deleteTransaction(tx.id)}
-                            disabled={deletingId === tx.id}
-                            className="text-xs text-red-600 hover:text-red-800 hover:underline disabled:text-slate-400 disabled:no-underline"
-                          >
-                            {deletingId === tx.id ? "Deleting…" : "Delete"}
-                          </button>
-                        </td>
-                      </tr>
+                          </div>
+                          <div className={`text-sm font-semibold ${tx.type === "revenue" ? "text-emerald-700" : "text-rose-700"}`}>
+                            {tx.type === "revenue" ? "+" : "-"}
+                            {money(tx.amount, currency)}
+                          </div>
+                        </div>
+                        <div className="mt-3 space-y-2 text-xs">
+                          <div>
+                            <div className="font-semibold uppercase tracking-wide text-slate-500">Description</div>
+                            <div className="mt-0.5 text-sm text-slate-900">{tx.description}</div>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="font-semibold uppercase tracking-wide text-slate-500">Category</div>
+                              <div className="mt-0.5 text-slate-700">{tx.category}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-semibold uppercase tracking-wide text-slate-500">Type</div>
+                              <div className="mt-0.5 capitalize text-slate-700">{tx.type}</div>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="font-semibold uppercase tracking-wide text-slate-500">OCR</div>
+                            <div className="mt-1">
+                              {tx.ocr ? (
+                                tx.ocr.reviewNeeded ? (
+                                  <span className="rounded bg-amber-100 px-2 py-1 text-amber-700">Needs review</span>
+                                ) : (
+                                  <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">
+                                    {Math.round(tx.ocr.extractionConfidence * 100)}% confidence
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-slate-400">Manual</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-stretch gap-2 pt-2">
+                            <button
+                              type="button"
+                              onClick={() => startEditing(tx)}
+                              disabled={Boolean(editingId)}
+                              className="rounded-lg border border-blue-200 px-3 py-2 text-left text-xs font-medium text-blue-600 hover:bg-blue-50 disabled:text-slate-400"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => duplicateTransaction(tx)}
+                              disabled={Boolean(editingId)}
+                              className="rounded-lg border border-indigo-200 px-3 py-2 text-left text-xs font-medium text-indigo-600 hover:bg-indigo-50 disabled:text-slate-400"
+                            >
+                              Duplicate
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteTransaction(tx.id)}
+                              disabled={deletingId === tx.id}
+                              className="rounded-lg border border-rose-200 px-3 py-2 text-left text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:text-slate-400"
+                            >
+                              {deletingId === tx.id ? "Deleting…" : "Delete"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     );
                   })}
-                  </tbody>
-                </table>
-              </div>
+                </div>
+                <div className="mt-4 hidden overflow-auto md:block">
+                  <table className="min-w-full text-sm">
+                    <thead className="text-left text-slate-500">
+                      <tr>
+                        <th className="py-2">Date</th>
+                        <th className="py-2">Type</th>
+                        <th className="py-2">Category</th>
+                        <th className="py-2">Description</th>
+                        <th className="py-2">Amount</th>
+                        <th className="py-2">OCR</th>
+                        <th className="py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTransactions.map((tx) => {
+                        const relativeLabel = getRelativeDateLabel(tx.date);
+
+                        return (
+                          <tr key={tx.id} className="border-t border-slate-100">
+                            <td className="py-2">
+                              <div>{formatIsoDateForDisplay(tx.date)}</div>
+                              {relativeLabel && (
+                                <div className="text-[10px] font-bold uppercase text-indigo-500">
+                                  {relativeLabel}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2 capitalize">{tx.type}</td>
+                            <td className="py-2">{tx.category}</td>
+                            <td className="py-2 text-slate-500 truncate max-w-[200px]" title={tx.description}>
+                              {tx.description}
+                            </td>
+                            <td className={`py-2 font-medium ${tx.type === "revenue" ? "text-emerald-700" : "text-rose-700"}`}>
+                              {tx.type === "revenue" ? "+" : "-"}
+                              {money(tx.amount, currency)}
+                            </td>
+                            <td className="py-2 text-xs">
+                              {tx.ocr ? (
+                                tx.ocr.reviewNeeded ? (
+                                  <span className="rounded bg-amber-100 px-2 py-1 text-amber-700">Needs review</span>
+                                ) : (
+                                  <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">
+                                    {Math.round(tx.ocr.extractionConfidence * 100)}% confidence
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-slate-400">Manual</span>
+                              )}
+                            </td>
+                            <td className="py-2 text-right">
+                              <button
+                                onClick={() => startEditing(tx)}
+                                disabled={Boolean(editingId)}
+                                className="mr-3 text-xs text-blue-600 hover:text-blue-800 hover:underline disabled:text-slate-400 disabled:no-underline"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => duplicateTransaction(tx)}
+                                disabled={Boolean(editingId)}
+                                className="mr-3 text-xs text-indigo-600 hover:text-indigo-800 hover:underline disabled:text-slate-400 disabled:no-underline"
+                              >
+                                Duplicate
+                              </button>
+                              <button
+                                onClick={() => deleteTransaction(tx.id)}
+                                disabled={deletingId === tx.id}
+                                className="text-xs text-red-600 hover:text-red-800 hover:underline disabled:text-slate-400 disabled:no-underline"
+                              >
+                                {deletingId === tx.id ? "Deleting…" : "Delete"}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
 
-          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+          <div id="deadlines-section" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
             <h2 className="text-lg font-semibold">Deadlines</h2>
             <p className="mt-1 text-xs text-slate-500">Mark items done as soon as you file to keep your queue clean.</p>
             {loading ? (
@@ -3574,7 +3851,140 @@ export default function Home() {
           ))}
         </datalist>
       </main>
+      <ReceivableActionModal
+        modal={receivableActionModal}
+        selectedCount={selectedReceivableIds.length}
+        onValueChange={(value) =>
+          setReceivableActionModal((prev) => ({
+            ...prev,
+            value,
+          }))
+        }
+        onCancel={closeReceivableActionModal}
+        onConfirm={confirmReceivableActionModal}
+      />
       <BottomNav active={activeTab} onChange={setActiveTab} />
+    </div>
+  );
+}
+
+function ReceivableActionModal({
+  modal,
+  selectedCount,
+  onValueChange,
+  onCancel,
+  onConfirm,
+}: {
+  modal: ReceivableActionModalState;
+  selectedCount: number;
+  onValueChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!modal.open || modal.type === "idle") return null;
+
+  const config: Record<
+    Exclude<ReceivableActionModalType, "idle">,
+    {
+      title: string;
+      description: string;
+      confirmLabel: string;
+      inputLabel?: string;
+      placeholder?: string;
+      inputType?: "text" | "number";
+    }
+  > = {
+    mark_partial: {
+      title: "Log partial payment",
+      description: "Enter the amount that was paid.",
+      confirmLabel: "Save payment",
+      inputLabel: "Payment amount",
+      placeholder: "0",
+      inputType: "number",
+    },
+    snooze: {
+      title: "Snooze follow-up",
+      description: "Pick the next follow-up date.",
+      confirmLabel: "Snooze",
+      inputLabel: "Next follow-up date",
+      placeholder: "YYYY-MM-DD",
+      inputType: "text",
+    },
+    set_promise_date: {
+      title: "Set promise date",
+      description: "Leave the field blank to clear the promise-to-pay date.",
+      confirmLabel: "Save date",
+      inputLabel: "Promise date",
+      placeholder: "YYYY-MM-DD",
+      inputType: "text",
+    },
+    bulk_mark_paid: {
+      title: "Confirm bulk payment",
+      description: `Mark ${selectedCount} selected receivable(s) as paid?`,
+      confirmLabel: "Confirm",
+    },
+    bulk_snooze: {
+      title: "Snooze selected follow-ups",
+      description: "Pick the next follow-up date for the selected receivables.",
+      confirmLabel: "Snooze",
+      inputLabel: "Next follow-up date",
+      placeholder: "YYYY-MM-DD",
+      inputType: "text",
+    },
+    delete_transaction: {
+      title: "Delete transaction",
+      description: "Are you sure you want to delete this transaction?",
+      confirmLabel: "Delete",
+    },
+    delete_deadline: {
+      title: "Delete deadline",
+      description: "Are you sure you want to delete this deadline?",
+      confirmLabel: "Delete",
+    },
+  };
+
+  const current = config[modal.type];
+  const showInput = Boolean(current.inputLabel);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4">
+      <form
+        className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl ring-1 ring-slate-200"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onConfirm();
+        }}
+      >
+        <h2 className="text-base font-semibold text-slate-900">{current.title}</h2>
+        <p className="mt-2 text-sm text-slate-600">{current.description}</p>
+        {showInput ? (
+          <label className="mt-4 block">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{current.inputLabel}</span>
+            <input
+              type={current.inputType}
+              value={modal.value}
+              onChange={(event) => onValueChange(event.target.value)}
+              placeholder={current.placeholder}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            />
+          </label>
+        ) : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            {current.confirmLabel}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

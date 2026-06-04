@@ -2,14 +2,6 @@ import assert from "node:assert";
 import { test, describe } from "node:test";
 import { POST } from "../route";
 
-// Minimal stubbing by replacing module functions directly on the imported object.
-// Node.js ESM modules are live bindings, so we can sometimes replace exports 
-// if they are exported as `export function` and we import them as `import * as mod`.
-
-import * as store from "@/lib/store";
-import * as billing from "@/lib/billing/guard";
-import * as parser from "@/lib/parser";
-
 describe("OCR missing fields validation (Stub-less)", () => {
   test("POST /api/upload should correctly branch based on OCR provider", async () => {
     // We can't easily stub the store/parser because they are likely read-only live bindings in Node ESM.

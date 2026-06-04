@@ -20,6 +20,8 @@ export async function POST(req: Request) {
   const [yearStr, monthStr] = monthInput.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr);
+  const monthStart = new Date(Date.UTC(year, month - 1, 1));
+  const monthEnd = new Date(Date.UTC(year, month, 0));
 
   const store = await readStore();
   const monthTransactions = store.transactions.filter((tx) => {
@@ -30,7 +32,10 @@ export async function POST(req: Request) {
   const monthDeadlines = store.deadlines.filter((d) => d.dueDate.startsWith(monthInput));
   const monthReceivables = store.receivables.filter((r) => r.dueDate.startsWith(monthInput));
 
-  const summary = buildSummary(monthTransactions, monthDeadlines, monthReceivables, store.settings);
+  const summary = buildSummary(monthTransactions, monthDeadlines, monthReceivables, store.settings, monthEnd, {
+    startDate: monthStart,
+    endDate: monthEnd,
+  });
   const artifacts = buildMonthlyExportArtifacts({
     month: monthInput,
     currency: store.settings.currency,

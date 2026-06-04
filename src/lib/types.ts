@@ -24,6 +24,10 @@ export type Transaction = {
   category: string;
   description: string;
   source: "manual" | "import";
+  vendor?: string;
+  paymentMethod?: string;
+  taxAmount?: number;
+  receiptRef?: string;
   receiptName?: string;
   ocr?: TransactionOcrData;
   createdAt: string;
@@ -35,6 +39,9 @@ export type Deadline = {
   dueDate: string; // ISO date
   recurring: "none" | "monthly" | "quarterly";
   status: "open" | "done";
+  jurisdiction?: string;
+  formType?: string;
+  assignee?: string;
   reminderOffsetsDays?: number[]; // notify when daysLeft matches an offset (defaults to [14,7,1,0])
   notes?: string;
   createdAt: string;
@@ -61,6 +68,10 @@ export type Receivable = {
   amountPaid: number;
   dueDate: string; // ISO date
   status: ReceivableStatus;
+  invoiceNumber?: string;
+  issueDate?: string;
+  contactChannel?: string;
+  paymentTerms?: string;
   description?: string;
   notes?: string;
   promiseDate?: string; // customer-promised pay date
@@ -77,6 +88,9 @@ export type Receivable = {
 export type Settings = {
   taxReserveRate: number; // 0-1
   currency: string;
+  timezone?: string;
+  fiscalYearStart?: number;
+  businessEntity?: string;
   monthlyRevenueGoal?: number;
   monthlyExpenseLimit?: number;
   currentCashBalance?: number;

@@ -12,6 +12,13 @@ function startOfUtcDay(input: Date): Date {
   return new Date(Date.UTC(input.getUTCFullYear(), input.getUTCMonth(), input.getUTCDate()));
 }
 
+function isWithinUtcDateRange(input: string, startDate: Date, endDate: Date): boolean {
+  const date = startOfUtcDay(new Date(input));
+  const start = startOfUtcDay(startDate);
+  const end = startOfUtcDay(endDate);
+  return date >= start && date <= end;
+}
+
 function deadlineDaysDiff(dueDate: string, now: Date): number {
   const due = startOfUtcDay(new Date(dueDate));
   const current = startOfUtcDay(now);
@@ -25,8 +32,11 @@ export function buildSummary(
   receivables: Receivable[],
   settings: Settings,
   now = new Date(),
+  dateRange?: { startDate: Date; endDate: Date },
 ): DashboardSummary {
-  const monthTx = transactions.filter((tx) => isSameMonth(new Date(tx.date), now));
+  const monthTx = dateRange
+    ? transactions.filter((tx) => isWithinUtcDateRange(tx.date, dateRange.startDate, dateRange.endDate))
+    : transactions.filter((tx) => isSameMonth(new Date(tx.date), now));
   const monthRevenue = sumByType(monthTx, "revenue");
   const monthExpense = sumByType(monthTx, "expense");
   const monthProfit = monthRevenue - monthExpense;

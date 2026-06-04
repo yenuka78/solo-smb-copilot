@@ -5,6 +5,8 @@ import { DefaultChatTransport } from "ai";
 import { useState, useRef, useEffect } from "react";
 
 const MODELS = [
+  { id: "gemma4:e2b", label: "Gemma 4 E2B", provider: "Local" },
+  { id: "gemma4:e4b", label: "Gemma 4 E4B", provider: "Local" },
   { id: "gpt-4o-mini", label: "GPT-4o Mini", provider: "OpenAI" },
   { id: "gpt-4o", label: "GPT-4o", provider: "OpenAI" },
   { id: "claude-haiku-4-5", label: "Claude Haiku", provider: "Anthropic" },
@@ -24,16 +26,23 @@ const SUGGESTED_PROMPTS = [
 
 export default function AICopilot() {
   const [open, setOpen] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
+  const [selectedModel, setSelectedModel] = useState("gemma4:e2b");
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { messages, sendMessage, status, stop, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
-      body: { model: selectedModel },
     }),
   });
+
+  const sendWithSelectedModel = (text: string) =>
+    sendMessage(
+      { text },
+      {
+        body: { model: selectedModel },
+      }
+    );
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -43,12 +52,12 @@ export default function AICopilot() {
     e.preventDefault();
     const text = inputText.trim();
     if (!text || status === "streaming" || status === "submitted") return;
-    sendMessage({ text });
+    sendWithSelectedModel(text);
     setInputText("");
   };
 
   const handleSuggestion = (prompt: string) => {
-    sendMessage({ text: prompt });
+    sendWithSelectedModel(prompt);
   };
 
   const isStreaming = status === "streaming" || status === "submitted";
@@ -150,7 +159,7 @@ export default function AICopilot() {
 
             {error && (
               <div className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">
-                Error: {error.message}. Check that your API key is set in .env.
+                Error: {error.message}
               </div>
             )}
 

@@ -19,7 +19,7 @@ export async function GET() {
     summary,
     alerts,
     settings: store.settings,
-    recentTransactions: store.transactions.slice(0, 50),
+    recentTransactions: store.transactions,
     deadlines: store.deadlines.slice(0, 20),
     reviewQueue: {
       pendingCount: reviewTransactions.length,
